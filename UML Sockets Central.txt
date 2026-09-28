@@ -1,0 +1,40 @@
++-------------------------------------------------------+
+|                      WM_Central                       |
++-------------------------------------------------------+
+| - puertoEscucha : int                                 |
+| - ipKafka : String                                    |
+| - puertoKafka : int                                   |
+| - skServidor : ServerSocket                           |
++-------------------------------------------------------+
+| + main(args : String[]) : void                        |
+| + iniciarServidorSockets(puerto : int) : void         |
++---------------------------+---------------------------+
+                            |
+                            | Por cada accept()
+                            | crea e inicia (1..N)
+                            v
++-------------------------------------------------------+
+|               HiloServidor (extends Thread)           |
++-------------------------------------------------------+
+| - skCliente : Socket                                  |
+| - flujoEntrada : DataInputStream                      |
+| - flujoSalida : DataOutputStream                      |
+| - gestor : GestorCentral                              |
++-------------------------------------------------------+
+| + HiloServidor(skCliente : Socket)                    |
+| + run() : void                                        |
+| - leerSocket() : String                               |
+| - escribirSocket(mensaje : String) : void             |
++---------------------------+---------------------------+
+                            |
+                            | Consulta y actualiza (N..1)
+                            v
++-------------------------------------------------------+
+|              GestorCentral <<Singleton>>              |
++-------------------------------------------------------+
+| - static instancia : GestorCentral                    |
+| - conexionBD : Connection                             |
++-------------------------------------------------------+
+| + static synchronized getInstance() : GestorCentral   |
+| + Operaciones CRUD y validaciones...                  |
++-------------------------------------------------------+

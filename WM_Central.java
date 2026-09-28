@@ -26,7 +26,7 @@ public class WM_Central {
 			skServidor = new ServerSocket(puertoEscucha);
 			System.out.println("Escucho el puerto " + puertoEscucha + " para recibir peticiones de los clientes");
 
-			if(GestorCentral.getInstancia().cargarDatos()){
+			if(GestorCentral.getInstance().cargarDatos()){
 				System.out.println("Datos cargados correctamente");
 			}else{
 				System.out.println("Error al cargar los datos");
@@ -56,10 +56,16 @@ public class WM_Central {
 		catch(Exception e)
 		{
 			System.out.println("Error: " + e.toString());
+		}finally {
+			if(skServidor != null) {
+				try {
+					skServidor.close();
+				} catch (IOException e) {
+					System.out.println("Error al cerrar el socket del servidor: " + e.getMessage());
+				}
+			}
 		}
-
-		System.out.println("Cerrando servidor...");
-		skServidor.close();
+		
 	}
 
 }
