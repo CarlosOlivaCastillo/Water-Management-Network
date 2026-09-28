@@ -3,17 +3,15 @@ import java.net.*;
 
 public class WM_Central {
 
-	private int puertoEscucha;
-	private String ipKafka;
-	private int puertoKafka;
+	private static int puertoEscucha;
+	private static String ipKafka;
+	private static int puertoKafka;
+	private static ServerSocket skServidor;
 
 	/**
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		int resultado=0;
-		String Cadena="";
-		String puerto="";
 		try
 		{
 			// servidor sr = new servidor();
@@ -25,29 +23,44 @@ public class WM_Central {
 			puertoEscucha = Integer.parseInt(args[0]);
 			ipKafka = args[1];
 			puertoKafka = Integer.parseInt(args[2]);
-			ServerSocket skServidor = new ServerSocket(puertoEscucha);
-		    System.out.println("Escucho el puerto " + puertoEscucha + " para recibir peticiones de los clientes");
+			skServidor = new ServerSocket(puertoEscucha);
+			System.out.println("Escucho el puerto " + puertoEscucha + " para recibir peticiones de los clientes");
+
+			if(GestorCentral.getInstancia().cargarDatos()){
+				System.out.println("Datos cargados correctamente");
+			}else{
+				System.out.println("Error al cargar los datos");
+				System.exit(1);
+			}
 			
+
+			// ARRANCAR KAFKA E INTERFACES 
 	
+
 			
-			for(;;)
-			{
-				
-				Socket skCliente = skServidor.accept(); // Crea objeto
-		        System.out.println("Sirviendo cliente...");
-				while (resultado != -1)
-				{
-										
-				}
-				
-				skCliente.close();
-				System.exit(0);				
+
+			
+			
+			for(;;) {
+				try{
+					Socket skCliente = skServidor.accept(); // Crea objeto
+					System.out.println("Sirviendo cliente...");
+
+					Thread t = new HiloServidor(skCliente);
+					t.start();
+				}catch(Exception e){
+					System.out.println("Error: " + e.toString());
+				}	
 			}
 		}
 		catch(Exception e)
 		{
 			System.out.println("Error: " + e.toString());
 		}
+
+		System.out.println("Cerrando servidor...");
+		skServidor.close();
 	}
 
 }
+
