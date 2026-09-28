@@ -20,19 +20,17 @@ public class WM_Central {
 				System.out.println("$./WM_Central puerto_central ip_kafka puerto_kafka");
 				System.exit (1);
 			}
-			puertoEscucha = Integer.parseInt(args[0]);
-			ipKafka = args[1];
-			puertoKafka = Integer.parseInt(args[2]);
-			skServidor = new ServerSocket(puertoEscucha);
-			System.out.println("Escucho el puerto " + puertoEscucha + " para recibir peticiones de los clientes");
-
 			if(GestorCentral.getInstance().cargarDatos()){
 				System.out.println("Datos cargados correctamente");
 			}else{
 				System.out.println("Error al cargar los datos");
 				System.exit(1);
 			}
-			
+			puertoEscucha = Integer.parseInt(args[0]);
+			ipKafka = args[1];
+			puertoKafka = Integer.parseInt(args[2]);
+			skServidor = new ServerSocket(puertoEscucha);
+			System.out.println("Escucho el puerto " + puertoEscucha + " para recibir peticiones de los clientes");
 
 			// ARRANCAR KAFKA E INTERFACES 
 	
