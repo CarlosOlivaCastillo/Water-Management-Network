@@ -1,10 +1,9 @@
-import java.lang.Exception;
 import java.net.Socket;
 import java.io.*;
 
 
 class HiloServidor extends Thread {
-    private Socket skCliente;
+    private final Socket skCliente;
     private DataInputStream flujoEntrada;
     private DataOutputStream flujoSalida;
     private GestorCentral gestorCentral;
@@ -13,6 +12,7 @@ class HiloServidor extends Thread {
         this.skCliente = skCliente;
     }
 
+    @Override
     public void run() {
         try {
             flujoEntrada = new DataInputStream(skCliente.getInputStream());
@@ -24,7 +24,7 @@ class HiloServidor extends Thread {
             //escribirSocket(respuesta);
 
             while (mensajeRecibido != null && !mensajeRecibido.equals("exit")) {
-                respuesta = gestorCentral.procesarPeticion(mensajeRecibido);
+                String respuesta = gestorCentral.procesarPeticion(mensajeRecibido);
                 escribirSocket(respuesta);
                 mensajeRecibido = leerSocket();
 
