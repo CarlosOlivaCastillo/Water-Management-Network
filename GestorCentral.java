@@ -17,7 +17,7 @@ public class GestorCentral{
         }
     }
 
-    public static GestorCentral getInstance() {
+    public static synchronized  GestorCentral getInstance() {
         if (instancia == null) {
             instancia = new GestorCentral();
         }
