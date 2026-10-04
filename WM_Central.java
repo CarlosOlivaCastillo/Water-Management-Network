@@ -12,8 +12,7 @@ public class WM_Central {
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		try
-		{
+		try{
 			// servidor sr = new servidor();
 			if (args.length < 3) {
 				System.out.println("Debe indicar el puerto de escucha de la central, IP de Kafka y puerto de Kafka");
@@ -51,8 +50,7 @@ public class WM_Central {
 				}	
 			}
 		}
-		catch(Exception e)
-		{
+		catch(Exception e) {
 			System.out.println("Error: " + e.toString());
 		}finally {
 			if(skServidor != null) {
