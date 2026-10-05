@@ -47,7 +47,7 @@ public final class GestorCentral{
 
 
     public synchronized boolean cargarDatos(){
-        String com = "UPDATE estaciones SET estado = 'DISPONIBLE', idFO = NULL";
+        String com = "UPDATE estaciones SET estado = 'DESCONECTADA', idFO = NULL";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
             pstmt.executeUpdate();
             return true;
@@ -73,11 +73,6 @@ public final class GestorCentral{
                     String idWS = partes[1];
                     String ubicacion = partes[2];
                     esvalido = añadirDatos(idWS, "DISPONIBLE", ubicacion);
-                    if(esvalido){
-                        return "<ACK>";
-                    }else{
-                        return "<NACK>";
-                    }
                 }
             }
             case "START_RIEGO" -> {
@@ -85,7 +80,13 @@ public final class GestorCentral{
                 if(partes.length == 4){
                     String idWS = partes[1];
                     String idFO = partes[2];
-                    int duracion = Integer.parseInt(partes[3]);
+                    int duracion;
+                    try{
+                        duracion = Integer.parseInt(partes[3]);
+                    }catch(NumberFormatException e){
+                        esvalido = false;
+                        break;
+                    }
                     esvalido = autorizarRiego(idWS, idFO, duracion);
                 }
             }
@@ -104,7 +105,7 @@ public final class GestorCentral{
                 }
             }
             default -> {
-                return "<NACK>";
+                throw new IllegalArgumentException("Petición no válida: " + mensaje);
             }
         }
 
@@ -117,7 +118,8 @@ public final class GestorCentral{
 
 
     public synchronized boolean añadirDatos(String idWS, String estado, String ubicacion){
-        String com = "INSERT INTO estaciones (idWS, estado, ubicacion) VALUES (?, ?, ?)";
+        // INSERT OR REPLACE para que en caso de existir no de error
+        String com = "INSERT OR REPLACE INTO estaciones (idWS, estado, ubicacion) VALUES (?, ?, ?)";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
             pstmt.setString(1, idWS);
             pstmt.setString(2, estado);
