@@ -94,7 +94,7 @@ public final class GestorCentral{
                 // AVERIA#IDWS
                 if(partes.length == 2){
                     String idWS = partes[1];
-                    esvalido = actualizarEstado(idWS, "AVERIADO");
+                    esvalido = actualizarEstado(idWS, "FUGA");
                 }
             }
             case "STOP_RIEGO" -> {
@@ -105,7 +105,7 @@ public final class GestorCentral{
                 }
             }
             default -> {
-                throw new IllegalArgumentException("Petición no válida: " + mensaje);
+                esvalido = false;
             }
         }
 
