@@ -114,3 +114,36 @@ Envía comandos para iniciar y detener el riego:
 - **Kafka - Topic `telemetria-estaciones`**:
   - Formato: `TELEMETRIA#<ID_WS>#<CAUDAL>#<VOLUMEN_ACUMULADO>#<TIMESTAMP>`
   - Ejemplo: `TELEMETRIA#WS_01#12.50#37.50#1790584334749`
+
+---
+
+## 📦 Contenerización con Docker (Fase 4)
+
+Se incluyen Dockerfiles multi-etapa ligeros (basados en Eclipse Temurin Alpine) para desplegar cada componente de forma aislada:
+
+### 1. Monitor (`Dockerfile.monitor`)
+```bash
+# Construir imagen:
+docker build -f Dockerfile.monitor -t wm_ws_m:latest .
+
+# Ejecutar contenedor:
+docker run -d --name monitor_ws01 -p 5000:5000 -e IP_CENTRAL="host.docker.internal" -e PUERTO_CENTRAL="8080" -e ID_WS="WS_01" wm_ws_m:latest
+```
+
+### 2. Engine (`Dockerfile.engine`)
+```bash
+# Construir imagen:
+docker build -f Dockerfile.engine -t wm_ws_e:latest .
+
+# Ejecutar contenedor interactivo (para simular KO con Enter):
+docker run -it --name engine_ws01 -e IP_KAFKA="host.docker.internal" -e IP_MONITOR="host.docker.internal" -e ID_WS="WS_01" wm_ws_e:latest
+```
+
+### 3. Field Operator (`Dockerfile.fo`)
+```bash
+# Construir imagen:
+docker build -f Dockerfile.fo -t wm_fo:latest .
+
+# Ejecutar contenedor:
+docker run -it --name fo_01 -e IP_KAFKA="host.docker.internal" -e ID_FO="FO_01" wm_fo:latest
+```

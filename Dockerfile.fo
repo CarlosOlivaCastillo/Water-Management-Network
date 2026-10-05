@@ -1,0 +1,27 @@
+# Dockerfile para el Field Operator (WM_FO)
+FROM eclipse-temurin:17-jdk-alpine AS builder
+
+WORKDIR /app
+
+# Copiar librerías y código fuente
+COPY kafka-clients.jar slf4j-api.jar slf4j-simple.jar ./
+COPY ProtocoloUtil.java WM_FO.java* ./
+
+# Compilar condicionalmente si existe WM_FO.java
+RUN if [ -f WM_FO.java ]; then javac -cp ".:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" ProtocoloUtil.java WM_FO.java; fi
+
+# Imagen final ligera JRE
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+
+# Copiar librerías y clases compiladas
+COPY kafka-clients.jar slf4j-api.jar slf4j-simple.jar ./
+COPY --from=builder /app/*.class ./
+
+# Variables de entorno por defecto
+ENV IP_KAFKA=broker \
+    PUERTO_KAFKA=9092 \
+    ID_FO=FO_01
+
+ENTRYPOINT ["sh", "-c", "java -cp '.:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar' WM_FO ${IP_KAFKA} ${PUERTO_KAFKA} ${ID_FO}"]

@@ -1,0 +1,6 @@
+.git
+.gitignore
+.vscode
+*.db
+*.log
+.system_generated
