@@ -67,7 +67,7 @@ public final class GestorCentral{
         String peticion = partes[0];
 
         switch(peticion) {
-            case "REGISTRO":
+            case "REGISTRO" -> {
                 // REGISTRO#IDWS#UBICACION
                 if(partes.length == 3){
                     String idWS = partes[1];
@@ -79,8 +79,8 @@ public final class GestorCentral{
                         return "<NACK>";
                     }
                 }
-                break;
-            case "START_RIEGO":
+            }
+            case "START_RIEGO" -> {
                 // START_RIEGO#IDWS#IDFO#DURACION
                 if(partes.length == 4){
                     String idWS = partes[1];
@@ -88,23 +88,24 @@ public final class GestorCentral{
                     int duracion = Integer.parseInt(partes[3]);
                     esvalido = autorizarRiego(idWS, idFO, duracion);
                 }
-                break;
-            case "AVERIA":
+            }
+            case "AVERIA" -> {
                 // AVERIA#IDWS
                 if(partes.length == 2){
                     String idWS = partes[1];
                     esvalido = actualizarEstado(idWS, "AVERIADO");
                 }
-                break;
-            case "STOP_RIEGO":
+            }
+            case "STOP_RIEGO" -> {
                 // STOP_RIEGO#IDWS
                 if(partes.length == 2){
                     String idWS = partes[1];
                     esvalido = actualizarEstado(idWS, "DISPONIBLE");
                 }
-                break;
-            default:
+            }
+            default -> {
                 return "<NACK>";
+            }
         }
 
         if(esvalido){
@@ -116,23 +117,81 @@ public final class GestorCentral{
 
 
     public synchronized boolean añadirDatos(String idWS, String estado, String ubicacion){
-        throw new UnsupportedOperationException("Not implemented yet");
+        String com = "INSERT INTO estaciones (idWS, estado, ubicacion) VALUES (?, ?, ?)";
+        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
+            pstmt.setString(1, idWS);
+            pstmt.setString(2, estado);
+            pstmt.setString(3, ubicacion);
+            int filasAfectadas = pstmt.executeUpdate();
+            return filasAfectadas > 0;
+        } catch (SQLException e) {
+            System.out.println("Error al cargar los datos: " + e.getMessage());
+            return false;
+        }    
     }
 
     public synchronized boolean actualizarEstado(String idWS, String estado){
-        throw new UnsupportedOperationException("Not implemented yet");
+        String com = "UPDATE estaciones SET estado = ? WHERE idWS = ?";
+        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
+            pstmt.setString(1, estado);
+            pstmt.setString(2, idWS);
+            int filasAfectadas = pstmt.executeUpdate();
+            return filasAfectadas > 0;
+        } catch (SQLException e) {
+            System.out.println("Error al actualizar el estado: " + e.getMessage());
+            return false;
+        }
     }
 
     public synchronized boolean estaDisponible(String idWS){
-        throw new UnsupportedOperationException("Not implemented yet");
+        String com = "SELECT estado FROM estaciones WHERE idWS = ?";
+        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
+            pstmt.setString(1, idWS);
+            try (ResultSet rs = pstmt.executeQuery()) { // TABLA CON LOS RESULTADOS DE LA CONSULTA
+                if (rs.next()) { // CONSULTAMOS LA PRIMERA
+                    String estado = rs.getString("estado");
+                    return "DISPONIBLE".equals(estado);
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Error al verificar disponibilidad: " + e.getMessage());
+        }
+        return false;
     }
 
     public synchronized boolean autorizarRiego(String idWS, String idFO, int duracion){
-        throw new UnsupportedOperationException("Not implemented yet");
+        if(estaDisponible(idWS)){
+            String com = "UPDATE estaciones SET estado = 'REGANDO', idFO = ? WHERE idWS = ?";
+            try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
+                pstmt.setString(1, idFO);
+                pstmt.setString(2, idWS);
+                int filasAfectadas = pstmt.executeUpdate();
+                return filasAfectadas > 0;
+            } catch (SQLException e) {
+                System.out.println("Error al autorizar riego: " + e.getMessage());
+            }
+        }
+        return false;
     }
 
     public synchronized List<String> obtenerEstaciones(){
-        throw new UnsupportedOperationException("Not implemented yet");
+        List<String> estaciones = new ArrayList<>();
+        String com = "SELECT idWS, estado, ubicacion FROM estaciones";
+        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)){
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    String idWS = rs.getString("idWS");
+                    String estado = rs.getString("estado");
+                    String ubicacion = rs.getString("ubicacion");
+                    estaciones.add(idWS + "#" + estado + "#" + ubicacion);
+                }
+            } catch (SQLException e) {
+                System.out.println("Error al obtener estaciones: " + e.getMessage());
+            }
+        }catch (SQLException e) {
+            System.out.println("Error al preparar la consulta: " + e.getMessage());
+        }
+        return estaciones;
     }
 
 }
