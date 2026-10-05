@@ -19,15 +19,19 @@ class HiloServidor extends Thread {
             flujoSalida = new DataOutputStream(skCliente.getOutputStream());
             gestorCentral = GestorCentral.getInstance();
 
-            String mensajeRecibido = leerSocket();
-            //String respuesta = gestorCentral.procesarPeticion(mensajeRecibido);
-            //escribirSocket(respuesta);
+            String tramaRecibida = leerSocket();
+            
 
-            while (mensajeRecibido != null && !mensajeRecibido.equals("exit")) {
-                String respuesta = gestorCentral.procesarPeticion(mensajeRecibido);
-                escribirSocket(respuesta);
-                mensajeRecibido = leerSocket();
-
+            while (tramaRecibida != null && !tramaRecibida.equals("exit")) {
+                try {
+                    String mensaje = ProtocoloUtil.desempaquetar(tramaRecibida);
+                    String respuesta = gestorCentral.procesarPeticion(mensaje);
+                    escribirSocket(respuesta);
+                } catch (Exception e) {
+                    System.out.println("Trama corrupta o LRC inválido: " + e.getMessage());
+                    escribirSocket("<NACK>");
+                }
+                tramaRecibida = leerSocket();
             }
 
         } catch (IOException e) {
