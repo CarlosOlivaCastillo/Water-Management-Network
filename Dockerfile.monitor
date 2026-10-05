@@ -1,0 +1,30 @@
+# Dockerfile para el Monitor de Estación de Riego (WM_WS_M)
+FROM eclipse-temurin:17-jdk-alpine AS builder
+
+WORKDIR /app
+
+# Copiar código fuente necesario
+COPY ProtocoloUtil.java WM_WS_M.java ./
+
+# Compilar
+RUN javac ProtocoloUtil.java WM_WS_M.java
+
+# Imagen final ligera JRE
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+
+# Copiar los .class compilados
+COPY --from=builder /app/*.class ./
+
+# Variables de entorno por defecto
+ENV PUERTO_ENGINE=5000 \
+    IP_CENTRAL=localhost \
+    PUERTO_CENTRAL=8080 \
+    ID_WS=WS_01
+
+# Puerto en el que el Monitor escucha al Engine
+EXPOSE 5000
+
+# Ejecutar con paso de parámetros configurables
+ENTRYPOINT ["sh", "-c", "java WM_WS_M ${PUERTO_ENGINE} ${IP_CENTRAL} ${PUERTO_CENTRAL} ${ID_WS}"]
