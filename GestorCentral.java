@@ -179,14 +179,15 @@ public final class GestorCentral{
 
     public synchronized List<String> obtenerEstaciones(){
         List<String> estaciones = new ArrayList<>();
-        String com = "SELECT idWS, estado, ubicacion FROM estaciones";
+        String com = "SELECT idWS, estado, ubicacion, idFO FROM estaciones";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)){
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     String idWS = rs.getString("idWS");
                     String estado = rs.getString("estado");
                     String ubicacion = rs.getString("ubicacion");
-                    estaciones.add(idWS + "#" + estado + "#" + ubicacion);
+                    String idFO = rs.getString("idFO");
+                    estaciones.add(idWS + "#" + estado + "#" + ubicacion + "#" + (idFO != null ? idFO : "-"));
                 }
             } catch (SQLException e) {
                 System.out.println("Error al obtener estaciones: " + e.getMessage());
