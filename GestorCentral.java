@@ -90,8 +90,8 @@ public final class GestorCentral{
                     esvalido = autorizarRiego(idWS, idFO, duracion);
                 }
             }
-            case "AVERIA" -> {
-                // AVERIA#IDWS
+            case "AVERIA", "FUGA" -> {
+                // AVERIA#IDWS o FUGA#IDWS
                 if(partes.length == 2){
                     String idWS = partes[1];
                     esvalido = actualizarEstado(idWS, "FUGA");
@@ -133,10 +133,11 @@ public final class GestorCentral{
     }
 
     public synchronized boolean actualizarEstado(String idWS, String estado){
-        String com = "UPDATE estaciones SET estado = ? WHERE idWS = ?";
+        String com = "UPDATE estaciones SET estado = ?, idFO = (CASE WHEN ? != 'REGANDO' THEN NULL ELSE idFO END) WHERE idWS = ?";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
             pstmt.setString(1, estado);
-            pstmt.setString(2, idWS);
+            pstmt.setString(2, estado);
+            pstmt.setString(3, idWS);
             int filasAfectadas = pstmt.executeUpdate();
             return filasAfectadas > 0;
         } catch (SQLException e) {
