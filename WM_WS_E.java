@@ -63,15 +63,23 @@ public class WM_WS_E {
                     ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                     for (ConsumerRecord<String, String> record : records) {
                         String mensaje = record.value();
-                        
-                        // Si la orden es abrir el agua para esta estación en concreto o global
-                        if (mensaje.contains("INICIAR_RIEGO")) {
-                            volumenAcumulado = 0.0; // Reiniciar acumulador de la sesión
-                            regando = true;
-                            System.out.println(">>> ORDEN RECIBIDA: Electroválvula ABIERTA. Comenzando riego.");
-                        } else if (mensaje.contains("PARAR_RIEGO")) {
-                            regando = false;
-                            System.out.println(">>> ORDEN RECIBIDA: Electroválvula CERRADA. Riego detenido.");
+                        if (mensaje != null) {
+                            mensaje = mensaje.trim();
+                            String[] partes = mensaje.split("#");
+                            String comando = partes[0];
+                            String idDestino = partes.length > 1 ? partes[1] : null;
+
+                            // Comprobar si la orden es global o va dirigida a esta estación
+                            if (idDestino == null || idDestino.equalsIgnoreCase(idWS) || idDestino.equalsIgnoreCase("ALL")) {
+                                if ("INICIAR_RIEGO".equalsIgnoreCase(comando)) {
+                                    volumenAcumulado = 0.0; // Reiniciar acumulador de la sesión
+                                    regando = true;
+                                    System.out.println(">>> ORDEN RECIBIDA: Electroválvula ABIERTA para [" + idWS + "]. Comenzando riego.");
+                                } else if ("PARAR_RIEGO".equalsIgnoreCase(comando)) {
+                                    regando = false;
+                                    System.out.println(">>> ORDEN RECIBIDA: Electroválvula CERRADA para [" + idWS + "]. Riego detenido.");
+                                }
+                            }
                         }
                     }
                 }
