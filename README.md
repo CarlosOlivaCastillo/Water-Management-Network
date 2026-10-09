@@ -56,10 +56,11 @@ javac -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" *.java
 Cada módulo debe ejecutarse en una terminal independiente.
 
 **1. Levantar la Central (`WM_Central`):**
-> Sintaxis: `java -cp "..." WM_Central <Puerto_Central> <IP_Kafka> <Puerto_Kafka>`
+> Sintaxis: `java -cp "..." WM_Central <Puerto_Central> <IP_Kafka> <Puerto_Kafka> [Puerto_Web]`
 ```powershell
 java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_Central 8080 localhost 9092
 ```
+*🌐 Dashboard Web en tiempo real disponible automáticamente en:* `http://localhost:8081/`
 
 **2. Levantar el Monitor (`WM_WS_M`):**
 > Sintaxis: `java WM_WS_M <Puerto_Escucha_Engine> <IP_Central> <Puerto_Central> <ID_WS>`
