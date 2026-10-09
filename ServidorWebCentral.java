@@ -46,7 +46,7 @@ public class ServidorWebCentral {
 
     public static void actualizarTelemetria(String idWS, double caudal, double volumen, long ts) {
         mapaTelemetria.put(idWS, new DatosTelemetria(idWS, caudal, volumen, ts));
-        registrarEvento("Telemetría de " + idWS + ": Caudal " + String.format(Locale.US, "%.1f", caudal) + " L/s | Acum: " + String.format(Locale.US, "%.1f", volumen) + " L");
+        registrarEvento("Telemetría " + idWS + ": " + String.format(Locale.US, "%.1f", caudal * 60) + " L/min | Acum: " + String.format(Locale.US, "%.1f", volumen) + " L");
     }
 
     public static void iniciar(int puertoHttp, String ipKafka, int puertoKafka) {
@@ -63,6 +63,7 @@ public class ServidorWebCentral {
             servidorHttp.createContext("/api/telemetria", new TelemetriaApiHandler());
             servidorHttp.createContext("/api/logs", new LogsApiHandler());
             servidorHttp.createContext("/api/riego", new ControlRiegoApiHandler());
+            servidorHttp.createContext("/api/estado", new CambiarEstadoApiHandler());
             servidorHttp.createContext("/api/emergencia", new ParadaEmergenciaApiHandler());
 
             servidorHttp.start();
@@ -142,6 +143,7 @@ public class ServidorWebCentral {
                     .append("\"ubicacion\":\"").append(ubicacion).append("\",")
                     .append("\"operador\":\"").append(operador).append("\",")
                     .append("\"caudal\":").append(String.format(Locale.US, "%.2f", caudal)).append(",")
+                    .append("\"caudalLMin\":").append(String.format(Locale.US, "%.2f", caudal * 60)).append(",")
                     .append("\"volumen\":").append(String.format(Locale.US, "%.2f", volumen))
                     .append("}");
 
@@ -224,7 +226,6 @@ public class ServidorWebCentral {
             String linea;
             while ((linea = br.readLine()) != null) sb.append(linea);
 
-            // Parse simple body: idWS=WS_01&accion=START&duracion=10
             String body = sb.toString();
             Map<String, String> params = parseFormBody(body);
 
@@ -247,7 +248,6 @@ public class ServidorWebCentral {
                     ok = true;
                     msg = "Riego activado correctamente";
 
-                    // Temporizador para parada automática
                     final int d = duracion;
                     final String ws = idWS;
                     new Thread(() -> {
@@ -259,7 +259,7 @@ public class ServidorWebCentral {
                         } catch (Exception ignored) {}
                     }).start();
                 } else {
-                    msg = "No se pudo autorizar el riego (estación ocupada o en avería)";
+                    msg = "No se pudo autorizar el riego (estación ocupada, fuera de servicio o en avería)";
                 }
             } else if ("STOP".equalsIgnoreCase(accion) && idWS != null) {
                 GestorCentral.getInstance().actualizarEstado(idWS, "DISPONIBLE");
@@ -267,6 +267,52 @@ public class ServidorWebCentral {
                 registrarEvento("Orden WEB: Riego detenido en " + idWS);
                 ok = true;
                 msg = "Riego detenido";
+            }
+
+            String respuesta = "{\"success\":" + ok + ",\"message\":\"" + msg + "\"}";
+            byte[] resp = respuesta.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(200, resp.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resp);
+            }
+        }
+    }
+
+    private static class CambiarEstadoApiHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            configurarCORS(exchange);
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(405, -1);
+                return;
+            }
+
+            InputStreamReader isr = new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8);
+            BufferedReader br = new BufferedReader(isr);
+            StringBuilder sb = new StringBuilder();
+            String linea;
+            while ((linea = br.readLine()) != null) sb.append(linea);
+
+            Map<String, String> params = parseFormBody(sb.toString());
+            String idWS = params.get("idWS");
+            String accion = params.get("accion"); // BLOQUEAR / ACTIVAR
+
+            boolean ok = false;
+            String msg = "";
+
+            if ("BLOQUEAR".equalsIgnoreCase(accion) && idWS != null) {
+                // Bloquear WS: finalizar riego si hubiera y poner FUERA_DE_SERVICIO
+                GestorCentral.getInstance().actualizarEstado(idWS, "FUERA_DE_SERVICIO");
+                enviarOrdenKafka("PARAR_RIEGO#" + idWS);
+                registrarEvento("Central: Estación " + idWS + " BLOQUEADA (Fuera de Servicio)");
+                ok = true;
+                msg = "Estación puesta Fuera de Servicio";
+            } else if ("ACTIVAR".equalsIgnoreCase(accion) && idWS != null) {
+                GestorCentral.getInstance().actualizarEstado(idWS, "DISPONIBLE");
+                registrarEvento("Central: Estación " + idWS + " ACTIVADA (Disponible)");
+                ok = true;
+                msg = "Estación activada";
             }
 
             String respuesta = "{\"success\":" + ok + ",\"message\":\"" + msg + "\"}";
@@ -348,11 +394,13 @@ public class ServidorWebCentral {
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        @keyframes pulse-fast { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.08); } }
+        @keyframes pulse-fast { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.05); } }
         @keyframes flow-pipe { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
-        .animate-fuga { animation: pulse-fast 1s infinite; }
+        @keyframes blink-green { 0%, 100% { background-color: rgba(16, 185, 129, 0.35); border-color: #10b981; } 50% { background-color: rgba(5, 150, 105, 0.85); border-color: #34d399; box-shadow: 0 0 20px rgba(16, 185, 129, 0.6); } }
+        
+        .animate-fuga { animation: pulse-fast 0.8s infinite; }
+        .animate-regando-card { animation: blink-green 1.2s infinite ease-in-out; }
         .pipe-flow { animation: flow-pipe 0.8s linear infinite; stroke-dasharray: 8 4; }
-        .water-wave { background: linear-gradient(135deg, #0ea5e9, #2563eb); }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
@@ -360,12 +408,12 @@ public class ServidorWebCentral {
     <!-- Navbar -->
     <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-6 py-4 flex items-center justify-between shadow-lg">
         <div class="flex items-center space-x-3">
-            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-cyan-500/30 shadow-md">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-emerald-500/30 shadow-md">
                 <i class="fa-solid fa-droplet text-xl"></i>
             </div>
             <div>
-                <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">Water Management Network</h1>
-                <p class="text-xs text-slate-400">Centro de Control de Riego Municipal (7 Estaciones)</p>
+                <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">Water Management Network</h1>
+                <p class="text-xs text-slate-400">Cuadro de Mandos Centralizado de Riego (Especificación Oficial SD)</p>
             </div>
         </div>
         <div class="flex items-center space-x-4">
@@ -382,38 +430,46 @@ public class ServidorWebCentral {
     <main class="max-w-7xl mx-auto p-6 space-y-6">
 
         <!-- Métricas Principales -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
-                <div class="flex items-center justify-between text-slate-400 text-sm font-medium mb-2">
-                    <span>Estaciones Totales</span>
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>Estaciones</span>
                     <i class="fa-solid fa-network-wired text-cyan-400"></i>
                 </div>
-                <div id="stat-total" class="text-3xl font-extrabold text-white">7</div>
-                <div class="text-xs text-slate-500 mt-1">Red Municipal de Parques y Jardines</div>
+                <div id="stat-total" class="text-2xl font-extrabold text-white">7</div>
+                <div class="text-[11px] text-slate-500 mt-1">Red Municipal</div>
             </div>
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
-                <div class="flex items-center justify-between text-slate-400 text-sm font-medium mb-2">
-                    <span>En Riego Activo</span>
-                    <i class="fa-solid fa-water text-blue-400 animate-bounce"></i>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>Regando (Verde Parp.)</span>
+                    <i class="fa-solid fa-water text-emerald-400 animate-bounce"></i>
                 </div>
-                <div id="stat-regando" class="text-3xl font-extrabold text-blue-400">0</div>
-                <div class="text-xs text-slate-500 mt-1">Consumiendo agua en tiempo real</div>
+                <div id="stat-regando" class="text-2xl font-extrabold text-emerald-400">0</div>
+                <div class="text-[11px] text-slate-500 mt-1">Suministrando agua</div>
             </div>
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
-                <div class="flex items-center justify-between text-slate-400 text-sm font-medium mb-2">
-                    <span>Disponibles</span>
-                    <i class="fa-solid fa-circle-check text-emerald-400"></i>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>Disponibles (Verde)</span>
+                    <i class="fa-solid fa-circle-check text-emerald-500"></i>
                 </div>
-                <div id="stat-disponibles" class="text-3xl font-extrabold text-emerald-400">0</div>
-                <div class="text-xs text-slate-500 mt-1">Listas para recibir órdenes</div>
+                <div id="stat-disponibles" class="text-2xl font-extrabold text-emerald-500">0</div>
+                <div class="text-[11px] text-slate-500 mt-1">A la espera de orden</div>
             </div>
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
-                <div class="flex items-center justify-between text-slate-400 text-sm font-medium mb-2">
-                    <span>Alertas / Fugas</span>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>Fugas (Rojo)</span>
                     <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
                 </div>
-                <div id="stat-fugas" class="text-3xl font-extrabold text-rose-400">0</div>
-                <div class="text-xs text-slate-500 mt-1">Requieren mantenimiento</div>
+                <div id="stat-fugas" class="text-2xl font-extrabold text-rose-400">0</div>
+                <div class="text-[11px] text-slate-500 mt-1">Averías detectadas</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>Fuera Servicio (Naranja)</span>
+                    <i class="fa-solid fa-ban text-amber-400"></i>
+                </div>
+                <div id="stat-bloqueadas" class="text-2xl font-extrabold text-amber-400">0</div>
+                <div class="text-[11px] text-slate-500 mt-1">Bloqueadas por Central</div>
             </div>
         </div>
 
@@ -422,28 +478,32 @@ public class ServidorWebCentral {
             <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
                 <div>
                     <h2 class="text-lg font-bold text-slate-200 flex items-center space-x-2">
-                        <i class="fa-solid fa-map-location-dot text-cyan-400"></i>
-                        <span>Mapa Topológico de la Red Hidráulica</span>
+                        <i class="fa-solid fa-map-location-dot text-emerald-400"></i>
+                        <span>Mapa Topológico de la Red Hidráulica (Colores Oficiales)</span>
                     </h2>
-                    <p class="text-xs text-slate-400">Estado en vivo de las 7 estaciones y tuberías de distribución municipal</p>
+                    <p class="text-xs text-slate-400">Visualización de estados y distribución de agua en tiempo real</p>
                 </div>
-                <!-- Leyenda de colores -->
+                <!-- Leyenda de colores Oficial del Enunciado -->
                 <div class="flex flex-wrap items-center gap-3 text-xs bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
                     <span class="flex items-center space-x-1.5 text-emerald-400 font-medium">
                         <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                        <span>Disponible</span>
+                        <span>Disponible (Verde)</span>
                     </span>
-                    <span class="flex items-center space-x-1.5 text-blue-400 font-medium">
-                        <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
-                        <span>Regando</span>
+                    <span class="flex items-center space-x-1.5 text-emerald-300 font-medium">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                        <span>Regando (Verde Parpadeante)</span>
                     </span>
                     <span class="flex items-center space-x-1.5 text-rose-400 font-medium">
-                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
-                        <span>Avería / Fuga</span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                        <span>Fuga (Rojo)</span>
+                    </span>
+                    <span class="flex items-center space-x-1.5 text-amber-400 font-medium">
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                        <span>Fuera de Servicio (Naranja)</span>
                     </span>
                     <span class="flex items-center space-x-1.5 text-slate-400 font-medium">
                         <span class="w-2.5 h-2.5 rounded-full bg-slate-600"></span>
-                        <span>Desconectada</span>
+                        <span>Desconectada (Gris)</span>
                     </span>
                 </div>
             </div>
@@ -454,8 +514,8 @@ public class ServidorWebCentral {
                 <svg id="svg-mapa" class="absolute inset-0 w-full h-full" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet">
                     <defs>
                         <linearGradient id="grad-central" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color="#06b6d4" />
-                            <stop offset="100%" stop-color="#2563eb" />
+                            <stop offset="0%" stop-color="#10b981" />
+                            <stop offset="100%" stop-color="#059669" />
                         </linearGradient>
                     </defs>
 
@@ -470,16 +530,16 @@ public class ServidorWebCentral {
 
                     <!-- Nodo Central WM_Central -->
                     <g transform="translate(500, 250)">
-                        <circle r="36" fill="url(#grad-central)" class="shadow-lg filter drop-shadow(0 0 12px rgba(6,182,212,0.5))" />
-                        <circle r="42" fill="none" stroke="#38bdf8" stroke-width="1.5" opacity="0.4" class="animate-ping" />
+                        <circle r="36" fill="url(#grad-central)" class="shadow-lg filter drop-shadow(0 0 12px rgba(16,185,129,0.5))" />
+                        <circle r="42" fill="none" stroke="#34d399" stroke-width="1.5" opacity="0.4" class="animate-ping" />
                         <text y="-5" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold" font-family="sans-serif">HUB CENTRAL</text>
-                        <text y="12" text-anchor="middle" fill="#e0f2fe" font-size="9" font-family="sans-serif">WM Central</text>
+                        <text y="12" text-anchor="middle" fill="#d1fae5" font-size="9" font-family="sans-serif">WM Central</text>
                     </g>
                 </svg>
 
                 <!-- Nodos HTML superpuestos en las coordenadas exactas -->
                 <div id="map-nodes-container" class="absolute inset-0 pointer-events-none">
-                    <!-- Los 7 nodos se posicionan de forma reactiva -->
+                    <!-- Nodos generados reactivamente -->
                 </div>
             </div>
         </div>
@@ -491,8 +551,8 @@ public class ServidorWebCentral {
             <div class="lg:col-span-2 space-y-4">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-bold text-slate-200 flex items-center space-x-2">
-                        <i class="fa-solid fa-satellite-dish text-cyan-400"></i>
-                        <span>Estaciones de Riego (Detalle)</span>
+                        <i class="fa-solid fa-satellite-dish text-emerald-400"></i>
+                        <span>Panel de Detalle de Estaciones</span>
                     </h2>
                     <span class="text-xs text-slate-500">Actualización en tiempo real</span>
                 </div>
@@ -507,8 +567,8 @@ public class ServidorWebCentral {
                 <!-- Gráfico de Consumo -->
                 <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
                     <h3 class="text-sm font-bold text-slate-300 mb-4 flex items-center space-x-2">
-                        <i class="fa-solid fa-chart-line text-cyan-400"></i>
-                        <span>Caudal en Vivo (Litros/segundo)</span>
+                        <i class="fa-solid fa-chart-line text-emerald-400"></i>
+                        <span>Caudal en Tiempo Real (Litros / Minuto)</span>
                     </h3>
                     <div class="h-56">
                         <canvas id="chartCaudal"></canvas>
@@ -520,7 +580,7 @@ public class ServidorWebCentral {
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-sm font-bold text-slate-300 flex items-center space-x-2">
                             <i class="fa-solid fa-terminal text-emerald-400"></i>
-                            <span>Registro de Actividad en Vivo</span>
+                            <span>Registro de Actividad y Eventos</span>
                         </h3>
                         <button onclick="limpiarLogs()" class="text-xs text-slate-500 hover:text-slate-300">Limpiar</button>
                     </div>
@@ -537,7 +597,6 @@ public class ServidorWebCentral {
     <script>
         let chart = null;
 
-        // Coordenadas relativas en porcentaje para el mapa (1000 x 500)
         const MAP_POSITIONS = {
             "WS_01": { x: 50, y: 13, name: "P. Central Norte" },
             "WS_02": { x: 78, y: 22, name: "P. Central Sur" },
@@ -555,10 +614,10 @@ public class ServidorWebCentral {
                 data: {
                     labels: [],
                     datasets: [{
-                        label: 'Caudal Actual (L/s)',
+                        label: 'Caudal (L/min)',
                         data: [],
-                        backgroundColor: 'rgba(14, 165, 233, 0.6)',
-                        borderColor: '#0284c7',
+                        backgroundColor: 'rgba(16, 185, 129, 0.65)',
+                        borderColor: '#10b981',
                         borderWidth: 1.5,
                         borderRadius: 6
                     }]
@@ -569,7 +628,6 @@ public class ServidorWebCentral {
                     scales: {
                         y: {
                             beginAtZero: true,
-                            max: 20,
                             grid: { color: 'rgba(51, 65, 85, 0.4)' },
                             ticks: { color: '#94a3b8' }
                         },
@@ -587,11 +645,10 @@ public class ServidorWebCentral {
 
         async function actualizarDatos() {
             try {
-                // 1. Obtener Estaciones
                 const resp = await fetch('/api/estaciones');
                 const estaciones = await resp.json();
 
-                let regando = 0, disponibles = 0, fugas = 0;
+                let regando = 0, disponibles = 0, fugas = 0, bloqueadas = 0;
                 const grid = document.getElementById('grid-estaciones');
                 const mapContainer = document.getElementById('map-nodes-container');
                 
@@ -599,43 +656,67 @@ public class ServidorWebCentral {
                 mapContainer.innerHTML = '';
 
                 const labels = [];
-                const caudales = [];
+                const caudalesLMin = [];
 
                 estaciones.forEach(e => {
                     if (e.estado === 'REGANDO') regando++;
                     else if (e.estado === 'DISPONIBLE') disponibles++;
                     else if (e.estado === 'FUGA') fugas++;
+                    else if (e.estado === 'FUERA_DE_SERVICIO') bloqueadas++;
 
                     labels.push(e.idWS);
-                    caudales.push(e.caudal || 0);
+                    caudalesLMin.push(e.caudalLMin || 0);
 
-                    // Configuración visual por estado
+                    // --- COLORES OFICIALES SEGÚN ESPECIFICACIÓN PDF ---
                     let badgeClass = 'bg-slate-800 text-slate-400 border border-slate-700';
-                    let borderClass = 'border-slate-800';
+                    let cardBgClass = 'bg-slate-900 border-slate-800';
                     let icon = 'fa-power-off text-slate-500';
                     let mapColor = 'bg-slate-800 border-slate-600 text-slate-400';
                     let pipeStroke = '#334155';
                     let pipeClass = '';
+                    let estadoLabel = e.estado;
 
                     if (e.estado === 'DISPONIBLE') {
-                        badgeClass = 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
-                        borderClass = 'border-emerald-500/30';
+                        // VERDE
+                        badgeClass = 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40';
+                        cardBgClass = 'bg-emerald-950/20 border-emerald-500/40';
                         icon = 'fa-circle-check text-emerald-400';
-                        mapColor = 'bg-emerald-600 border-emerald-400 text-white shadow-lg shadow-emerald-500/40';
+                        mapColor = 'bg-emerald-600 border-emerald-300 text-white shadow-lg shadow-emerald-500/40';
                         pipeStroke = '#10b981';
+                        estadoLabel = 'DISPONIBLE';
                     } else if (e.estado === 'REGANDO') {
-                        badgeClass = 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
-                        borderClass = 'border-blue-500/50 shadow-lg shadow-blue-500/10';
-                        icon = 'fa-water text-blue-400 animate-pulse';
-                        mapColor = 'bg-blue-600 border-cyan-300 text-white shadow-lg shadow-cyan-500/50 animate-pulse';
-                        pipeStroke = '#0ea5e9';
+                        // VERDE PARPADEANDO
+                        badgeClass = 'bg-emerald-500 text-slate-950 font-extrabold border border-emerald-300 animate-pulse';
+                        cardBgClass = 'animate-regando-card border-emerald-400 text-white';
+                        icon = 'fa-water text-emerald-300 animate-pulse';
+                        mapColor = 'bg-emerald-500 border-white text-slate-950 font-extrabold shadow-lg shadow-emerald-400/80 animate-ping';
+                        pipeStroke = '#10b981';
                         pipeClass = 'pipe-flow';
+                        estadoLabel = 'REGANDO (EN CURSO)';
                     } else if (e.estado === 'FUGA') {
-                        badgeClass = 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-fuga';
-                        borderClass = 'border-rose-500/50 shadow-lg shadow-rose-500/10';
+                        // ROJO
+                        badgeClass = 'bg-rose-600/30 text-rose-300 border border-rose-500 animate-fuga';
+                        cardBgClass = 'bg-rose-950/30 border-rose-500/60 shadow-lg shadow-rose-500/20 animate-fuga';
                         icon = 'fa-triangle-exclamation text-rose-400';
-                        mapColor = 'bg-rose-600 border-rose-400 text-white shadow-lg shadow-rose-500/50 animate-fuga';
+                        mapColor = 'bg-rose-600 border-rose-300 text-white shadow-lg shadow-rose-500/60 animate-fuga';
                         pipeStroke = '#f43f5e';
+                        estadoLabel = 'FUGA DETECTADA';
+                    } else if (e.estado === 'FUERA_DE_SERVICIO') {
+                        // NARANJA
+                        badgeClass = 'bg-amber-600/30 text-amber-300 border border-amber-500';
+                        cardBgClass = 'bg-amber-950/20 border-amber-500/40';
+                        icon = 'fa-ban text-amber-400';
+                        mapColor = 'bg-amber-600 border-amber-300 text-white shadow-lg shadow-amber-500/40';
+                        pipeStroke = '#f59e0b';
+                        estadoLabel = 'FUERA DE SERVICIO';
+                    } else {
+                        // GRIS (DESCONECTADA)
+                        badgeClass = 'bg-slate-800 text-slate-400 border border-slate-700';
+                        cardBgClass = 'bg-slate-900 border-slate-800 opacity-70';
+                        icon = 'fa-power-off text-slate-500';
+                        mapColor = 'bg-slate-800 border-slate-600 text-slate-400';
+                        pipeStroke = '#334155';
+                        estadoLabel = 'DESCONECTADA';
                     }
 
                     // Actualizar tubería SVG
@@ -663,19 +744,19 @@ public class ServidorWebCentral {
                     mapNode.innerHTML = `
                         <div class="flex flex-col items-center">
                             <div class="w-10 h-10 rounded-full border-2 ${mapColor} flex items-center justify-center font-bold text-xs transition duration-300 transform group-hover:scale-110">
-                                <i class="fa-solid ${e.estado === 'REGANDO' ? 'fa-droplet animate-bounce' : (e.estado === 'FUGA' ? 'fa-triangle-exclamation' : 'fa-seedling')}"></i>
+                                <i class="fa-solid ${e.estado === 'REGANDO' ? 'fa-droplet animate-bounce' : (e.estado === 'FUGA' ? 'fa-triangle-exclamation' : (e.estado === 'FUERA_DE_SERVICIO' ? 'fa-ban' : 'fa-seedling'))}"></i>
                             </div>
                             <span class="mt-1 px-2 py-0.5 rounded bg-slate-900/90 text-[10px] font-bold text-slate-200 border border-slate-700 whitespace-nowrap shadow">
                                 ${e.idWS}
                             </span>
-                            ${e.estado === 'REGANDO' ? `<span class="text-[9px] font-bold text-cyan-400 bg-slate-950 px-1.5 rounded">${e.caudal.toFixed(1)} L/s</span>` : ''}
+                            ${e.estado === 'REGANDO' ? `<span class="text-[9px] font-bold text-emerald-400 bg-slate-950 px-1.5 rounded">${e.caudalLMin.toFixed(0)} L/min</span>` : ''}
                         </div>
                     `;
                     mapContainer.appendChild(mapNode);
 
-                    // Renderizar Tarjeta en la cuadrícula
+                    // Renderizar Tarjeta en la cuadrícula con los datos exactos del PDF
                     const card = document.createElement('div');
-                    card.className = `bg-slate-900 border ${borderClass} rounded-2xl p-5 space-y-4 transition duration-300`;
+                    card.className = `border rounded-2xl p-5 space-y-4 transition duration-300 ${cardBgClass}`;
                     card.innerHTML = `
                         <div class="flex items-center justify-between">
                             <div class="flex items-center space-x-2">
@@ -683,43 +764,51 @@ public class ServidorWebCentral {
                                 <span class="font-bold text-lg text-white">${e.idWS}</span>
                             </div>
                             <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeClass}">
-                                ${e.estado}
+                                ${estadoLabel}
                             </span>
                         </div>
 
-                        <div class="text-xs text-slate-400">
-                            <div class="flex justify-between py-0.5">
-                                <span>Ubicación:</span>
-                                <span class="font-medium text-slate-200">${e.ubicacion}</span>
+                        <div class="text-xs text-slate-300 space-y-1">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Ubicación:</span>
+                                <span class="font-medium text-slate-100">${e.ubicacion}</span>
                             </div>
-                            <div class="flex justify-between py-0.5">
-                                <span>Operador actual:</span>
-                                <span class="font-medium text-slate-200">${e.operador || '-'}</span>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-2 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
-                            <div>
-                                <span class="text-[10px] text-slate-500 uppercase font-semibold">Caudal</span>
-                                <div class="text-base font-bold text-cyan-400">${e.caudal.toFixed(1)} <span class="text-xs font-normal text-slate-400">L/s</span></div>
-                            </div>
-                            <div>
-                                <span class="text-[10px] text-slate-500 uppercase font-semibold">Volumen Total</span>
-                                <div class="text-base font-bold text-blue-400">${e.volumen.toFixed(1)} <span class="text-xs font-normal text-slate-400">L</span></div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Id Operario:</span>
+                                <span class="font-medium text-emerald-400">${e.operador || '-'}</span>
                             </div>
                         </div>
 
-                        <div class="flex space-x-2 pt-1">
+                        <div class="grid grid-cols-2 gap-2 bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+                            <div>
+                                <span class="text-[10px] text-slate-400 uppercase font-semibold">Caudal Actual</span>
+                                <div class="text-base font-bold text-emerald-400">${e.caudalLMin.toFixed(1)} <span class="text-xs font-normal text-slate-400">L/min</span></div>
+                            </div>
+                            <div>
+                                <span class="text-[10px] text-slate-400 uppercase font-semibold">Volumen Acumulado</span>
+                                <div class="text-base font-bold text-cyan-400">${e.volumen.toFixed(1)} <span class="text-xs font-normal text-slate-400">Litros</span></div>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-2 pt-1">
                             ${e.estado === 'DISPONIBLE' ? `
-                                <button onclick="iniciarRiegoPrompt('${e.idWS}')" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1">
+                                <button onclick="iniciarRiegoPrompt('${e.idWS}')" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1 shadow">
                                     <i class="fa-solid fa-play text-[10px]"></i>
                                     <span>Regar</span>
                                 </button>
+                                <button onclick="cambiarEstadoCentral('${e.idWS}', 'BLOQUEAR')" class="py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition">
+                                    <span>Bloquear</span>
+                                </button>
                             ` : ''}
                             ${e.estado === 'REGANDO' ? `
-                                <button onclick="detenerRiego('${e.idWS}')" class="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1">
+                                <button onclick="detenerRiego('${e.idWS}')" class="flex-1 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1 shadow">
                                     <i class="fa-solid fa-stop text-[10px]"></i>
-                                    <span>Detener</span>
+                                    <span>Detener Riego</span>
+                                </button>
+                            ` : ''}
+                            ${e.estado === 'FUERA_DE_SERVICIO' ? `
+                                <button onclick="cambiarEstadoCentral('${e.idWS}', 'ACTIVAR')" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition">
+                                    <span>Activar Estación</span>
                                 </button>
                             ` : ''}
                         </div>
@@ -731,15 +820,14 @@ public class ServidorWebCentral {
                 document.getElementById('stat-regando').innerText = regando;
                 document.getElementById('stat-disponibles').innerText = disponibles;
                 document.getElementById('stat-fugas').innerText = fugas;
+                document.getElementById('stat-bloqueadas').innerText = bloqueadas;
 
-                // Actualizar gráfico
                 if (chart) {
                     chart.data.labels = labels;
-                    chart.data.datasets[0].data = caudales;
+                    chart.data.datasets[0].data = caudalesLMin;
                     chart.update('none');
                 }
 
-                // 2. Obtener Logs
                 const respLogs = await fetch('/api/logs');
                 const logs = await respLogs.json();
                 const logContainer = document.getElementById('console-logs');
@@ -778,6 +866,20 @@ public class ServidorWebCentral {
                 actualizarDatos();
             } catch (err) {
                 alert("Error al detener riego: " + err);
+            }
+        }
+
+        async function cambiarEstadoCentral(idWS, accion) {
+            try {
+                const resp = await fetch('/api/estado', {
+                    method: 'POST',
+                    body: `idWS=${encodeURIComponent(idWS)}&accion=${encodeURIComponent(accion)}`
+                });
+                const res = await resp.json();
+                if (!res.success) alert(res.message);
+                actualizarDatos();
+            } catch (err) {
+                alert("Error al cambiar estado: " + err);
             }
         }
 

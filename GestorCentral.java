@@ -134,6 +134,20 @@ public final class GestorCentral{
                     esvalido = actualizarEstado(idWS, "DISPONIBLE");
                 }
             }
+            case "BLOQUEAR" -> {
+                // BLOQUEAR#IDWS -> Pasa a FUERA_DE_SERVICIO
+                if(partes.length == 2){
+                    String idWS = partes[1];
+                    esvalido = actualizarEstado(idWS, "FUERA_DE_SERVICIO");
+                }
+            }
+            case "ACTIVAR" -> {
+                // ACTIVAR#IDWS -> Vuelve a DISPONIBLE
+                if(partes.length == 2){
+                    String idWS = partes[1];
+                    esvalido = actualizarEstado(idWS, "DISPONIBLE");
+                }
+            }
             default -> {
                 esvalido = false;
             }
