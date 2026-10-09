@@ -47,9 +47,39 @@ public final class GestorCentral{
 
 
     public synchronized boolean cargarDatos(){
-        String com = "UPDATE estaciones SET estado = 'DESCONECTADA', idFO = NULL";
-        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
-            pstmt.executeUpdate();
+        try {
+            // 1. Eliminar estaciones de prueba antiguas
+            String sqlClean = "DELETE FROM estaciones WHERE idWS LIKE '%TEST%' OR idWS LIKE '%E2E%'";
+            try (PreparedStatement pstmt = conexionBBDD.prepareStatement(sqlClean)) {
+                pstmt.executeUpdate();
+            }
+
+            // 2. Marcar estaciones como DESCONECTADA al reiniciar Central
+            String com = "UPDATE estaciones SET estado = 'DESCONECTADA', idFO = NULL";
+            try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
+                pstmt.executeUpdate();
+            }
+
+            // 3. Inicializar las 7 estaciones oficiales
+            String[][] estacionesBase = {
+                {"WS_01", "Parque Central - Norte"},
+                {"WS_02", "Parque Central - Sur"},
+                {"WS_03", "Jardines del Prado"},
+                {"WS_04", "Av. de las Palmeras"},
+                {"WS_05", "Plaza Mayor"},
+                {"WS_06", "Parque Fluvial Este"},
+                {"WS_07", "Vivero Municipal"}
+            };
+
+            String sqlInsert = "INSERT OR IGNORE INTO estaciones (idWS, estado, ubicacion, idFO) VALUES (?, 'DESCONECTADA', ?, NULL)";
+            try (PreparedStatement pstmt = conexionBBDD.prepareStatement(sqlInsert)) {
+                for (String[] est : estacionesBase) {
+                    pstmt.setString(1, est[0]);
+                    pstmt.setString(2, est[1]);
+                    pstmt.executeUpdate();
+                }
+            }
+
             return true;
         } catch (SQLException e) {
             System.out.println("Error al cargar los datos: " + e.getMessage());

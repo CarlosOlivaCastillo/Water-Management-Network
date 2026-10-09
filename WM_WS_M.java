@@ -12,6 +12,7 @@ public class WM_WS_M {
         String ipCentral = args[1];
         int puertoCentral = Integer.parseInt(args[2]);
         String idWS = args[3];
+        String ubicacion = (args.length >= 5) ? args[4] : "Sector Municipal";
 
         Socket skCentral = null;
         DataOutputStream salidaCentral = null;
@@ -23,10 +24,10 @@ public class WM_WS_M {
             System.out.println("Conexion con la central correcta");
 
             // Enviar petición de registro y alta
-            String mensajeRegistro = "REGISTRO#" + idWS + "#Parque Central";
+            String mensajeRegistro = "REGISTRO#" + idWS + "#" + ubicacion;
             String tramaRegistro = ProtocoloUtil.empaquetar(mensajeRegistro);
             salidaCentral.writeUTF(tramaRegistro);
-            System.out.println("Petición de registro enviada a Central.");
+            System.out.println("Petición de registro enviada a Central [" + idWS + " - " + ubicacion + "].");
 
         } catch (Exception e) {
             System.out.println("AVISO: LA CENTRAL NO ESTA CONECTADA, MODO AISLADO");

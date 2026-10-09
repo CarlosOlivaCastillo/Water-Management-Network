@@ -348,8 +348,10 @@ public class ServidorWebCentral {
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        @keyframes pulse-fast { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.05); } }
+        @keyframes pulse-fast { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.08); } }
+        @keyframes flow-pipe { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
         .animate-fuga { animation: pulse-fast 1s infinite; }
+        .pipe-flow { animation: flow-pipe 0.8s linear infinite; stroke-dasharray: 8 4; }
         .water-wave { background: linear-gradient(135deg, #0ea5e9, #2563eb); }
     </style>
 </head>
@@ -363,7 +365,7 @@ public class ServidorWebCentral {
             </div>
             <div>
                 <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">Water Management Network</h1>
-                <p class="text-xs text-slate-400">Panel Centralizado de Telemetría y Control de Riego</p>
+                <p class="text-xs text-slate-400">Centro de Control de Riego Municipal (7 Estaciones)</p>
             </div>
         </div>
         <div class="flex items-center space-x-4">
@@ -386,8 +388,8 @@ public class ServidorWebCentral {
                     <span>Estaciones Totales</span>
                     <i class="fa-solid fa-network-wired text-cyan-400"></i>
                 </div>
-                <div id="stat-total" class="text-3xl font-extrabold text-white">0</div>
-                <div class="text-xs text-slate-500 mt-1">Registradas en Base de Datos</div>
+                <div id="stat-total" class="text-3xl font-extrabold text-white">7</div>
+                <div class="text-xs text-slate-500 mt-1">Red Municipal de Parques y Jardines</div>
             </div>
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
                 <div class="flex items-center justify-between text-slate-400 text-sm font-medium mb-2">
@@ -415,6 +417,73 @@ public class ServidorWebCentral {
             </div>
         </div>
 
+        <!-- SECCIÓN: MAPA INTERACTIVO DE LA RED DE RIEGO -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-200 flex items-center space-x-2">
+                        <i class="fa-solid fa-map-location-dot text-cyan-400"></i>
+                        <span>Mapa Topológico de la Red Hidráulica</span>
+                    </h2>
+                    <p class="text-xs text-slate-400">Estado en vivo de las 7 estaciones y tuberías de distribución municipal</p>
+                </div>
+                <!-- Leyenda de colores -->
+                <div class="flex flex-wrap items-center gap-3 text-xs bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+                    <span class="flex items-center space-x-1.5 text-emerald-400 font-medium">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <span>Disponible</span>
+                    </span>
+                    <span class="flex items-center space-x-1.5 text-blue-400 font-medium">
+                        <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+                        <span>Regando</span>
+                    </span>
+                    <span class="flex items-center space-x-1.5 text-rose-400 font-medium">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+                        <span>Avería / Fuga</span>
+                    </span>
+                    <span class="flex items-center space-x-1.5 text-slate-400 font-medium">
+                        <span class="w-2.5 h-2.5 rounded-full bg-slate-600"></span>
+                        <span>Desconectada</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Contenedor del Mapa SVG -->
+            <div class="relative w-full h-80 bg-slate-950 rounded-xl overflow-hidden border border-slate-800/80 flex items-center justify-center">
+                <!-- SVG de tuberías interactivas -->
+                <svg id="svg-mapa" class="absolute inset-0 w-full h-full" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet">
+                    <defs>
+                        <linearGradient id="grad-central" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#06b6d4" />
+                            <stop offset="100%" stop-color="#2563eb" />
+                        </linearGradient>
+                    </defs>
+
+                    <!-- Tuberías hacia cada una de las 7 estaciones -->
+                    <g id="tubo-WS_01"><path d="M 500 250 L 500 65" stroke="#334155" stroke-width="4" fill="none"/></g>
+                    <g id="tubo-WS_02"><path d="M 500 250 L 780 110" stroke="#334155" stroke-width="4" fill="none"/></g>
+                    <g id="tubo-WS_03"><path d="M 500 250 L 870 260" stroke="#334155" stroke-width="4" fill="none"/></g>
+                    <g id="tubo-WS_04"><path d="M 500 250 L 750 420" stroke="#334155" stroke-width="4" fill="none"/></g>
+                    <g id="tubo-WS_05"><path d="M 500 250 L 250 420" stroke="#334155" stroke-width="4" fill="none"/></g>
+                    <g id="tubo-WS_06"><path d="M 500 250 L 130 260" stroke="#334155" stroke-width="4" fill="none"/></g>
+                    <g id="tubo-WS_07"><path d="M 500 250 L 220 110" stroke="#334155" stroke-width="4" fill="none"/></g>
+
+                    <!-- Nodo Central WM_Central -->
+                    <g transform="translate(500, 250)">
+                        <circle r="36" fill="url(#grad-central)" class="shadow-lg filter drop-shadow(0 0 12px rgba(6,182,212,0.5))" />
+                        <circle r="42" fill="none" stroke="#38bdf8" stroke-width="1.5" opacity="0.4" class="animate-ping" />
+                        <text y="-5" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold" font-family="sans-serif">HUB CENTRAL</text>
+                        <text y="12" text-anchor="middle" fill="#e0f2fe" font-size="9" font-family="sans-serif">WM Central</text>
+                    </g>
+                </svg>
+
+                <!-- Nodos HTML superpuestos en las coordenadas exactas -->
+                <div id="map-nodes-container" class="absolute inset-0 pointer-events-none">
+                    <!-- Los 7 nodos se posicionan de forma reactiva -->
+                </div>
+            </div>
+        </div>
+
         <!-- Grid de Estaciones y Gráfico -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -423,9 +492,9 @@ public class ServidorWebCentral {
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-bold text-slate-200 flex items-center space-x-2">
                         <i class="fa-solid fa-satellite-dish text-cyan-400"></i>
-                        <span>Estaciones de Riego Monitoreadas</span>
+                        <span>Estaciones de Riego (Detalle)</span>
                     </h2>
-                    <span class="text-xs text-slate-500">Actualización automática cada 1s</span>
+                    <span class="text-xs text-slate-500">Actualización en tiempo real</span>
                 </div>
 
                 <div id="grid-estaciones" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -467,7 +536,17 @@ public class ServidorWebCentral {
 
     <script>
         let chart = null;
-        let chartData = { labels: [], datasets: [] };
+
+        // Coordenadas relativas en porcentaje para el mapa (1000 x 500)
+        const MAP_POSITIONS = {
+            "WS_01": { x: 50, y: 13, name: "P. Central Norte" },
+            "WS_02": { x: 78, y: 22, name: "P. Central Sur" },
+            "WS_03": { x: 87, y: 52, name: "Jardines del Prado" },
+            "WS_04": { x: 75, y: 84, name: "Av. Palmeras" },
+            "WS_05": { x: 25, y: 84, name: "Plaza Mayor" },
+            "WS_06": { x: 13, y: 52, name: "Parque Fluvial" },
+            "WS_07": { x: 22, y: 22, name: "Vivero Municipal" }
+        };
 
         function initChart() {
             const ctx = document.getElementById('chartCaudal').getContext('2d');
@@ -514,17 +593,13 @@ public class ServidorWebCentral {
 
                 let regando = 0, disponibles = 0, fugas = 0;
                 const grid = document.getElementById('grid-estaciones');
+                const mapContainer = document.getElementById('map-nodes-container');
+                
                 grid.innerHTML = '';
+                mapContainer.innerHTML = '';
 
                 const labels = [];
                 const caudales = [];
-
-                if (estaciones.length === 0) {
-                    grid.innerHTML = `<div class="col-span-2 text-center p-8 bg-slate-900 border border-slate-800 rounded-2xl text-slate-500">
-                        <i class="fa-solid fa-inbox text-3xl mb-2"></i>
-                        <p>No hay estaciones registradas. Inicia un Monitor (WM_WS_M) para conectar una estación.</p>
-                    </div>`;
-                }
 
                 estaciones.forEach(e => {
                     if (e.estado === 'REGANDO') regando++;
@@ -534,25 +609,71 @@ public class ServidorWebCentral {
                     labels.push(e.idWS);
                     caudales.push(e.caudal || 0);
 
-                    // Color de tarjeta
-                    let badgeClass = 'bg-slate-700 text-slate-300';
+                    // Configuración visual por estado
+                    let badgeClass = 'bg-slate-800 text-slate-400 border border-slate-700';
                     let borderClass = 'border-slate-800';
                     let icon = 'fa-power-off text-slate-500';
+                    let mapColor = 'bg-slate-800 border-slate-600 text-slate-400';
+                    let pipeStroke = '#334155';
+                    let pipeClass = '';
 
                     if (e.estado === 'DISPONIBLE') {
                         badgeClass = 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
                         borderClass = 'border-emerald-500/30';
                         icon = 'fa-circle-check text-emerald-400';
+                        mapColor = 'bg-emerald-600 border-emerald-400 text-white shadow-lg shadow-emerald-500/40';
+                        pipeStroke = '#10b981';
                     } else if (e.estado === 'REGANDO') {
                         badgeClass = 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
                         borderClass = 'border-blue-500/50 shadow-lg shadow-blue-500/10';
                         icon = 'fa-water text-blue-400 animate-pulse';
+                        mapColor = 'bg-blue-600 border-cyan-300 text-white shadow-lg shadow-cyan-500/50 animate-pulse';
+                        pipeStroke = '#0ea5e9';
+                        pipeClass = 'pipe-flow';
                     } else if (e.estado === 'FUGA') {
                         badgeClass = 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-fuga';
                         borderClass = 'border-rose-500/50 shadow-lg shadow-rose-500/10';
                         icon = 'fa-triangle-exclamation text-rose-400';
+                        mapColor = 'bg-rose-600 border-rose-400 text-white shadow-lg shadow-rose-500/50 animate-fuga';
+                        pipeStroke = '#f43f5e';
                     }
 
+                    // Actualizar tubería SVG
+                    const tuboG = document.getElementById(`tubo-${e.idWS}`);
+                    if (tuboG) {
+                        const path = tuboG.querySelector('path');
+                        if (path) {
+                            path.setAttribute('stroke', pipeStroke);
+                            path.setAttribute('class', pipeClass);
+                            path.setAttribute('stroke-width', e.estado === 'REGANDO' ? '6' : '4');
+                        }
+                    }
+
+                    // Renderizar Nodo en el Mapa
+                    const pos = MAP_POSITIONS[e.idWS] || { x: 50, y: 50, name: e.idWS };
+                    const mapNode = document.createElement('div');
+                    mapNode.className = `absolute transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group`;
+                    mapNode.style.left = `${pos.x}%`;
+                    mapNode.style.top = `${pos.y}%`;
+                    mapNode.onclick = () => {
+                        if (e.estado === 'DISPONIBLE') iniciarRiegoPrompt(e.idWS);
+                        else if (e.estado === 'REGANDO') detenerRiego(e.idWS);
+                    };
+
+                    mapNode.innerHTML = `
+                        <div class="flex flex-col items-center">
+                            <div class="w-10 h-10 rounded-full border-2 ${mapColor} flex items-center justify-center font-bold text-xs transition duration-300 transform group-hover:scale-110">
+                                <i class="fa-solid ${e.estado === 'REGANDO' ? 'fa-droplet animate-bounce' : (e.estado === 'FUGA' ? 'fa-triangle-exclamation' : 'fa-seedling')}"></i>
+                            </div>
+                            <span class="mt-1 px-2 py-0.5 rounded bg-slate-900/90 text-[10px] font-bold text-slate-200 border border-slate-700 whitespace-nowrap shadow">
+                                ${e.idWS}
+                            </span>
+                            ${e.estado === 'REGANDO' ? `<span class="text-[9px] font-bold text-cyan-400 bg-slate-950 px-1.5 rounded">${e.caudal.toFixed(1)} L/s</span>` : ''}
+                        </div>
+                    `;
+                    mapContainer.appendChild(mapNode);
+
+                    // Renderizar Tarjeta en la cuadrícula
                     const card = document.createElement('div');
                     card.className = `bg-slate-900 border ${borderClass} rounded-2xl p-5 space-y-4 transition duration-300`;
                     card.innerHTML = `
