@@ -56,7 +56,11 @@ public class WM_Central {
         hiloKafka.setDaemon(true);
         hiloKafka.start();
 
-        // 5. Menú interactivo por consola en hilo principal
+        // 5. Iniciar Servidor Web Dashboard (HTTP)
+        int puertoWeb = (args.length >= 4) ? Integer.parseInt(args[3]) : 8081;
+        ServidorWebCentral.iniciar(puertoWeb, ipKafka, puertoKafka);
+
+        // 6. Menú interactivo por consola en hilo principal
         Scanner scanner = new Scanner(System.in);
         mostrarMenu();
 
@@ -159,6 +163,9 @@ public class WM_Central {
                 double volAcumulado = Double.parseDouble(partes[3]);
                 long timestamp = Long.parseLong(partes[4]);
 
+                // Actualizar métricas para el Dashboard Web
+                ServidorWebCentral.actualizarTelemetria(idWS, caudal, volAcumulado, timestamp);
+
                 System.out.printf("\n[TELEMETRÍA KAFKA] Estación: %-7s | Caudal: %6.2f L/s | Consumo Total: %8.2f L | TS: %d\n[CENTRAL] Comandante > ",
                         idWS, caudal, volAcumulado, timestamp);
             }
@@ -200,14 +207,16 @@ public class WM_Central {
         System.out.println("  2 / menu        : Mostrar este menú de ayuda");
         System.out.println("  3 / limpiar     : Limpiar consola");
         System.out.println("  4 / salir       : Detener la Central y salir");
+        System.out.println("  🌐 Dashboard Web: http://localhost:8081/");
         System.out.println("---------------------------------------");
     }
 
     /**
-     * Detiene los servicios de Sockets y Kafka de manera segura.
+     * Detiene los servicios de Sockets, Kafka y Web de manera segura.
      */
     public static void detener() {
         ejecutando = false;
+        ServidorWebCentral.detener();
         if (skServidor != null && !skServidor.isClosed()) {
             try {
                 skServidor.close();
