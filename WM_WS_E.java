@@ -37,13 +37,18 @@ public class WM_WS_E {
 
         // 1. Hilo de simulación de averías (Teclado)
         Thread hiloTeclado = new Thread(() -> {
-            Scanner scanner = new Scanner(System.in);
-            System.out.println("Pulsa ENTER en cualquier momento para simular un KO (Fuga)...");
-            scanner.nextLine();
-            averiaSimulada = true;
-            System.out.println("¡Avería simulada activada! El próximo reporte será KO.");
-            scanner.close();
+            try {
+                Scanner scanner = new Scanner(System.in);
+                System.out.println("Pulsa ENTER en cualquier momento para simular un KO (Fuga)...");
+                if (scanner.hasNextLine()) {
+                    scanner.nextLine();
+                    averiaSimulada = true;
+                    System.out.println("¡Avería simulada activada! El próximo reporte será KO.");
+                }
+                scanner.close();
+            } catch (Exception ignored) {}
         });
+        hiloTeclado.setDaemon(true);
         hiloTeclado.start();
 
         // 2. Hilo Consumidor de Kafka (Asíncrono)
@@ -121,13 +126,29 @@ public class WM_WS_E {
         });
         hiloTelemetria.start();
 
-        // 4. Bucle principal: Conexión Sockets con el Monitor
-        try {
-            Socket skMonitor = new Socket(ipMonitor, puertoMonitor);
-            DataInputStream flujoEntrada = new DataInputStream(skMonitor.getInputStream());
-            DataOutputStream flujoSalida = new DataOutputStream(skMonitor.getOutputStream());
-            System.out.println("Conectado al Monitor localmente.");
+        // 4. Bucle principal: Conexión Sockets con el Monitor (con reintentos)
+        Socket skMonitor = null;
+        DataInputStream flujoEntrada = null;
+        DataOutputStream flujoSalida = null;
 
+        for (int intento = 1; intento <= 10; intento++) {
+            try {
+                skMonitor = new Socket(ipMonitor, puertoMonitor);
+                flujoEntrada = new DataInputStream(skMonitor.getInputStream());
+                flujoSalida = new DataOutputStream(skMonitor.getOutputStream());
+                System.out.println("Conectado al Monitor localmente.");
+                break;
+            } catch (Exception e) {
+                if (intento < 10) {
+                    try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                } else {
+                    System.err.println("No se pudo conectar al Monitor tras 10 intentos.");
+                    System.exit(1);
+                }
+            }
+        }
+
+        try {
             while (true) {
                 String peticionTrama = flujoEntrada.readUTF();
                 String peticion = ProtocoloUtil.desempaquetar(peticionTrama);

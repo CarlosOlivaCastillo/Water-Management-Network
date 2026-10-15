@@ -65,23 +65,30 @@ public class WM_Central {
         mostrarMenu();
 
         while (ejecutando) {
-            System.out.print("\n[CENTRAL] Comandante > ");
-            if (!scanner.hasNextLine()) break;
-
-            String comando = scanner.nextLine().trim();
-            if (comando.equalsIgnoreCase("1") || comando.equalsIgnoreCase("estaciones")) {
-                mostrarEstadoEstaciones();
-            } else if (comando.equalsIgnoreCase("2") || comando.equalsIgnoreCase("menu") || comando.equalsIgnoreCase("ayuda")) {
-                mostrarMenu();
-            } else if (comando.equalsIgnoreCase("3") || comando.equalsIgnoreCase("limpiar")) {
-                System.out.print("\033[H\033[2J");
-                System.out.flush();
-            } else if (comando.equalsIgnoreCase("4") || comando.equalsIgnoreCase("salir") || comando.equalsIgnoreCase("exit")) {
-                System.out.println("[CENTRAL] Apagando Central de Gestión de Agua...");
-                ejecutando = false;
-                break;
-            } else if (!comando.isEmpty()) {
-                System.out.println("Comando desconocido. Escribe 'menu' para ver las opciones disponibles.");
+            if (scanner.hasNextLine()) {
+                System.out.print("\n[CENTRAL] Comandante > ");
+                String comando = scanner.nextLine().trim();
+                if (comando.equalsIgnoreCase("1") || comando.equalsIgnoreCase("estaciones")) {
+                    mostrarEstadoEstaciones();
+                } else if (comando.equalsIgnoreCase("2") || comando.equalsIgnoreCase("menu") || comando.equalsIgnoreCase("ayuda")) {
+                    mostrarMenu();
+                } else if (comando.equalsIgnoreCase("3") || comando.equalsIgnoreCase("limpiar")) {
+                    System.out.print("\033[H\033[2J");
+                    System.out.flush();
+                } else if (comando.equalsIgnoreCase("4") || comando.equalsIgnoreCase("salir") || comando.equalsIgnoreCase("exit")) {
+                    System.out.println("[CENTRAL] Apagando Central de Gestión de Agua...");
+                    ejecutando = false;
+                    break;
+                } else if (!comando.isEmpty()) {
+                    System.out.println("Comando desconocido. Escribe 'menu' para ver las opciones disponibles.");
+                }
+            } else {
+                // Entorno sin terminal interactiva (ej. contenedor Docker en segundo plano)
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    break;
+                }
             }
         }
 

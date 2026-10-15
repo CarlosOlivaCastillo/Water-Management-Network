@@ -21,9 +21,9 @@ COPY --from=builder /app/*.class ./
 
 # Variables de entorno por defecto
 ENV IP_KAFKA=broker \
-    PUERTO_KAFKA=9092 \
+    PUERTO_KAFKA=29092 \
     ID_FO=FO_01 \
-    IP_CENTRAL=host.docker.internal \
+    IP_CENTRAL=central \
     PUERTO_CENTRAL=8080
 
 ENTRYPOINT ["sh", "-c", "java -cp '.:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar' WM_FO ${IP_KAFKA} ${PUERTO_KAFKA} ${ID_FO} \"$@\"", "--"]

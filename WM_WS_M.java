@@ -17,20 +17,26 @@ public class WM_WS_M {
         Socket skCentral = null;
         DataOutputStream salidaCentral = null;
 
-        // 1. Intento de conexion Central y Autenticación
-        try {
-            skCentral = new Socket(ipCentral, puertoCentral);
-            salidaCentral = new DataOutputStream(skCentral.getOutputStream());
-            System.out.println("Conexion con la central correcta");
+        // 1. Intento de conexion Central y Autenticación con reintentos
+        for (int intento = 1; intento <= 5; intento++) {
+            try {
+                skCentral = new Socket(ipCentral, puertoCentral);
+                salidaCentral = new DataOutputStream(skCentral.getOutputStream());
+                System.out.println("Conexion con la central correcta");
 
-            // Enviar petición de registro y alta
-            String mensajeRegistro = "REGISTRO#" + idWS + "#" + ubicacion;
-            String tramaRegistro = ProtocoloUtil.empaquetar(mensajeRegistro);
-            salidaCentral.writeUTF(tramaRegistro);
-            System.out.println("Petición de registro enviada a Central [" + idWS + " - " + ubicacion + "].");
-
-        } catch (Exception e) {
-            System.out.println("AVISO: LA CENTRAL NO ESTA CONECTADA, MODO AISLADO");
+                // Enviar petición de registro y alta
+                String mensajeRegistro = "REGISTRO#" + idWS + "#" + ubicacion;
+                String tramaRegistro = ProtocoloUtil.empaquetar(mensajeRegistro);
+                salidaCentral.writeUTF(tramaRegistro);
+                System.out.println("Petición de registro enviada a Central [" + idWS + " - " + ubicacion + "].");
+                break;
+            } catch (Exception e) {
+                if (intento < 5) {
+                    try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
+                } else {
+                    System.out.println("AVISO: LA CENTRAL NO ESTA CONECTADA TRAS 5 INTENTOS, MODO AISLADO");
+                }
+            }
         }
 
         // 2. Levantar el servidor para escuchar el engine
