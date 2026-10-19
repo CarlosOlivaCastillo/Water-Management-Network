@@ -90,8 +90,8 @@ public final class GestorCentral{
                     esvalido = autorizarRiego(idWS, idFO, duracion);
                 }
             }
-            case "AVERIA" -> {
-                // AVERIA#IDWS
+            case "FUGA" -> {
+                // FUGA#IDWS
                 if(partes.length == 2){
                     String idWS = partes[1];
                     esvalido = actualizarEstado(idWS, "FUGA");
