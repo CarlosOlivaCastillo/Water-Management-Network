@@ -16,27 +16,34 @@ public final class GestorCentral{
             crearTablasIniciales();
             cargarDatos();
         } catch (ClassNotFoundException | SQLException e) {
-            System.out.println("Error al conectar con la base de datos: " + e.getMessage());
+            System.out.println("ERROR al conectar con la base de datos: " + e.getMessage());
         }
     }
 
 
     public void crearTablasIniciales() {
-    String sql = "CREATE TABLE IF NOT EXISTS estaciones ("
+        String sqlEstaciones = "CREATE TABLE IF NOT EXISTS estaciones ("
                 + "idWS TEXT PRIMARY KEY, "
                 + "ubicacion TEXT, "
                 + "estado TEXT, "
-                + "idFO TEXT" // PARA GUARDAR QUIEN ACTIVA EL RIEGO
+                + "idFO TEXT," // PARA GUARDAR QUIEN ACTIVA EL RIEGO
+                + "duracion INTEGER DEFAULT 0, "
+                + "fecha_inicio TEXT"
                 + ");";
-    try (PreparedStatement pstmt = conexionBBDD.prepareStatement(sql)) {
+        String sqlOperarios = "CREATE TABLE IF NOT EXISTS operarios ("
+                + "idFO TEXT PRIMARY KEY, "
+                + "nombre TEXT"
+                + ");";
+        try (Statement pstmt = conexionBBDD.createStatement()) {
+            pstmt.execute(sqlEstaciones);
+            pstmt.execute(sqlOperarios);
+            pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('FO_01', 'Operario Norte')");
+            pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('FO_02', 'Operario Sur')");
+        } catch (SQLException e) {
+            System.out.println("ERROR al crear las tablas: " + e.getMessage());
+        }
         
-        pstmt.execute(); 
-        // System.out.println("Base de datos y tablas inicializadas correctamente.");
-        
-    } catch (SQLException e) {
-        // System.out.println("Error fatal al crear las tablas: " + e.getMessage());
     }
-}
 
     public static synchronized  GestorCentral getInstance() {
         if (instancia == null) {
@@ -47,60 +54,103 @@ public final class GestorCentral{
 
 
     public synchronized boolean cargarDatos(){
-        String com = "UPDATE estaciones SET estado = 'DESCONECTADA', idFO = NULL";
+        String com = "UPDATE estaciones SET estado = 'DESCONECTADA', idFO = NULL, duracion = 0, fecha_inicio = NULL";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
             pstmt.executeUpdate();
             return true;
         } catch (SQLException e) {
-            System.out.println("Error al cargar los datos: " + e.getMessage());
+            System.out.println("ERROR al cargar los datos: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized boolean validarOperario(String idFO){
+        if(idFO.equals("CENTRAL")){
+            return true;
+        }
+        String com = "SELECT idFO FROM  operarios WHERE idFO = ? ";
+        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)){
+            pstmt.setString(1, idFO);
+            try (ResultSet rs = pstmt.executeQuery()){
+                return rs.next();
+            }
+        }catch(SQLException e){
+            System.out.println("ERROR al validar operario");
             return false;
         }
     }
 
 
+
     public synchronized String procesarPeticion(String mensaje){
         boolean esvalido = false;
-        String [] partes = mensaje.split("#");
-        if (partes.length == 0) {
+        if(mensaje == null || mensaje.trim().isEmpty()){
             return "<NACK>";
         }
-        String peticion = partes[0];
+        String [] partes = mensaje.split("#");
+        String peticion = partes[0].trim();
 
         switch(peticion) {
             case "REGISTRO" -> {
                 // REGISTRO#IDWS#UBICACION
                 if(partes.length == 3){
-                    String idWS = partes[1];
-                    String ubicacion = partes[2];
+                    String idWS = partes[1].trim();
+                    String ubicacion = partes[2].trim();
                     esvalido = añadirDatos(idWS, "DISPONIBLE", ubicacion);
                 }
             }
             case "START_RIEGO" -> {
                 // START_RIEGO#IDWS#IDFO#DURACION
                 if(partes.length == 4){
-                    String idWS = partes[1];
-                    String idFO = partes[2];
+                    String idWS = partes[1].trim();
+                    String idFO = partes[2].trim();
                     int duracion;
                     try{
-                        duracion = Integer.parseInt(partes[3]);
+                        duracion = Integer.parseInt(partes[3].trim());
                     }catch(NumberFormatException e){
-                        esvalido = false;
-                        break;
+                        return "<NACK>";
                     }
-                    esvalido = autorizarRiego(idWS, idFO, duracion);
+                    if(validarOperario(idFO)){
+                        esvalido = autorizarRiego(idWS, idFO, duracion);
+                    }
                 }
             }
             case "FUGA" -> {
                 // FUGA#IDWS
                 if(partes.length == 2){
-                    String idWS = partes[1];
+                    String idWS = partes[1].trim();
+                    
+                    if(estaRegando(idWS)){
+                        WM_Central.cortarAguaFuga(idWS);
+                    }
+
                     esvalido = actualizarEstado(idWS, "FUGA");
                 }
             }
             case "STOP_RIEGO" -> {
-                // STOP_RIEGO#IDWS
+                // STOP_RIEGO#IDWS#idFO
+                if(partes.length >= 2){
+                    String idWS = partes[1].trim();
+                    esvalido = finalizarRiego(idWS);
+                }
+            }
+            case "DESCONEXION" -> {
                 if(partes.length == 2){
-                    String idWS = partes[1];
+                    String idWS = partes[1].trim();
+                    esvalido = actualizarEstado(idWS,"DESCONECTADA");
+                }
+            }
+
+            case "BLOQUEAR" -> {
+                if(partes.length == 2){
+                    String idWS = partes[1].trim();
+                    esvalido = actualizarEstado(idWS, "FUERA DE SERVICIO");
+                }
+            }
+
+            case "ACTIVAR" -> {
+                if(partes.length == 2){
+                    String idWS = partes[1].trim();
                     esvalido = actualizarEstado(idWS, "DISPONIBLE");
                 }
             }
@@ -119,7 +169,8 @@ public final class GestorCentral{
 
     public synchronized boolean añadirDatos(String idWS, String estado, String ubicacion){
         // INSERT OR REPLACE para que en caso de existir no de error
-        String com = "INSERT OR REPLACE INTO estaciones (idWS, estado, ubicacion) VALUES (?, ?, ?)";
+        String com = "INSERT OR REPLACE INTO estaciones (idWS, estado, ubicacion, idFO, duracion, fecha_inicio)"
+                + "VALUES (?, ?, ?, NULL, 0, NULL)";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
             pstmt.setString(1, idWS);
             pstmt.setString(2, estado);
@@ -133,10 +184,15 @@ public final class GestorCentral{
     }
 
     public synchronized boolean actualizarEstado(String idWS, String estado){
-        String com = "UPDATE estaciones SET estado = ? WHERE idWS = ?";
+        String com = "UPDATE estaciones SET estado = ?, "
+                + "idFO = CASE WHEN ? IN ('DISPONIBLE', 'DESCONECTADA', 'FUERA DE SERVICIO') THEN NULL ELSE idFO END, "
+                + "duracion = CASE WHEN ? IN ('DISPONIBLE', 'DESCONECTADA', 'FUERA DE SERVICIO') THEN 0 ELSE duracion END "
+                + "WHERE idWS = ?";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
             pstmt.setString(1, estado);
-            pstmt.setString(2, idWS);
+            pstmt.setString(2, estado);
+            pstmt.setString(3, estado);
+            pstmt.setString(4, idWS);
             int filasAfectadas = pstmt.executeUpdate();
             return filasAfectadas > 0;
         } catch (SQLException e) {
@@ -152,7 +208,7 @@ public final class GestorCentral{
             try (ResultSet rs = pstmt.executeQuery()) { // TABLA CON LOS RESULTADOS DE LA CONSULTA
                 if (rs.next()) { // CONSULTAMOS LA PRIMERA
                     String estado = rs.getString("estado");
-                    return "DISPONIBLE".equals(estado);
+                    return "DISPONIBLE".equals(estado.toUpperCase());
                 }
             }
         } catch (SQLException e) {
@@ -161,37 +217,85 @@ public final class GestorCentral{
         return false;
     }
 
+    public synchronized boolean estaRegando(String idWS){
+        String com = "SELECT estado FROM estaciones WHERE idWS = ?";
+        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)){
+            pstmt.setString(1, idWS);
+            try(ResultSet rs = pstmt.executeQuery()){
+                if(rs.next()){
+                    String estado = rs.getString("estado");
+                    return "REGANDO".equals(estado.toUpperCase());
+                }
+            }
+        }catch(SQLException e){
+            System.out.println("ERROR al verificar si estaba regando: " + e.getMessage());
+        }
+        return false;
+    }
+
+    public synchronized String obtenerOperario(String idWS){
+        String com = "SELECT idFO FROM estaciones WHERE idWS = ?";
+        try(PreparedStatement pstmt = conexionBBDD.prepareStatement(com)){
+            pstmt.setString(1, idWS);
+            try(ResultSet rs = pstmt.executeQuery()){
+                if(rs.next()){
+                    return rs.getString("idFO");
+                }
+            }
+        }catch(SQLException e){
+            System.out.println("ERROR al obtener el operario");
+            
+        }
+        return null;
+    }
+
+
     public synchronized boolean autorizarRiego(String idWS, String idFO, int duracion){
         if(estaDisponible(idWS)){
-            String com = "UPDATE estaciones SET estado = 'REGANDO', idFO = ? WHERE idWS = ?";
+            String com = "UPDATE estaciones SET estado = 'REGANDO', idFO = ?, duracion = ?, "
+                    + "fecha_inicio = datetime('now', 'localtime') WHERE idWS = ?";
             try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
                 pstmt.setString(1, idFO);
-                pstmt.setString(2, idWS);
+                pstmt.setInt(2, duracion);
+                pstmt.setString(3, idWS);
                 int filasAfectadas = pstmt.executeUpdate();
                 return filasAfectadas > 0;
             } catch (SQLException e) {
-                System.out.println("Error al autorizar riego: " + e.getMessage());
+                System.out.println("ERROR al autorizar riego: " + e.getMessage());
             }
         }
         return false;
     }
 
+    public synchronized boolean finalizarRiego(String idWS){
+        String com = "UPDATE estaciones SET estado = 'DISPONIBLE', idFO = NULL, duracion = 0, fecha_inicio = NULL WHERE idWS = ?";
+        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)){
+            pstmt.setString(1, idWS);
+            int filasAfectadas = pstmt.executeUpdate();
+            return filasAfectadas > 0;
+        }catch(SQLException e){
+            System.out.println("ERROR al finalizar el riego: " + e.getMessage());
+            return false;
+        }
+    }
+
     public synchronized List<String> obtenerEstaciones(){
         List<String> estaciones = new ArrayList<>();
-        String com = "SELECT idWS, estado, ubicacion FROM estaciones";
+        String com = "SELECT idWS, estado, ubicacion, idFO FROM estaciones";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)){
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     String idWS = rs.getString("idWS");
                     String estado = rs.getString("estado");
                     String ubicacion = rs.getString("ubicacion");
-                    estaciones.add(idWS + "#" + estado + "#" + ubicacion);
+                    String idFO = rs.getString("idFO");
+                    estaciones.add(idWS + "#" + estado + "#" + ubicacion + "#" + (idFO != null ? idFO : "SIN_FO"));
                 }
             } catch (SQLException e) {
-                System.out.println("Error al obtener estaciones: " + e.getMessage());
+                System.out.println("ERROR al obtener estaciones: " + e.getMessage());
             }
         }catch (SQLException e) {
-            System.out.println("Error al preparar la consulta: " + e.getMessage());
+            System.out.println("ERROR al preparar la consulta: " + e.getMessage());
         }
         return estaciones;
     }
