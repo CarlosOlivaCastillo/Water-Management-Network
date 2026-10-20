@@ -25,14 +25,23 @@ class HiloServidor extends Thread {
 
             while (tramaRecibida != null && !tramaRecibida.equals("exit")) {
                 try {
+                    String accion = null;
                     String mensaje = ProtocoloUtil.desempaquetar(tramaRecibida);
-                    if(mensaje.trim().isEmpty()){
+                    if(!mensaje.trim().isEmpty()){
                         // De esta forma nos aseguramos que si cae el servidor se cierra la conexión
                         String[] partes = mensaje.split("#");
-                        idWS = partes[1].trim();
+                        accion = partes[0].trim();
+                        if(partes.length > 1){
+                            idWS = partes[1].trim();
+                        }
                     }
                     String respuesta = gestorCentral.procesarPeticion(mensaje);
-                    escribirSocket(ProtocoloUtil.empaquetar(respuesta));
+                    // SI SOLO SE DEVUELVE <ACK> LA FUNCION SPLIT DEJA UNA UNICA PARTE
+                    String[] partes = respuesta.split("#");
+                    if(partes.length > 1 && partes[1].trim().equals("R")  && accion.equals("FUGA")){
+                        WM_Central.cortarAguaFuga(idWS);
+                    }
+                    escribirSocket(ProtocoloUtil.empaquetar(partes[0].trim()));
                 } catch (Exception e) {
                     System.out.println("Trama corrupta o LRC inválido: " + e.getMessage());
                     escribirSocket("<NACK>");

@@ -119,12 +119,24 @@ public final class GestorCentral{
                 // FUGA#IDWS
                 if(partes.length == 2){
                     String idWS = partes[1].trim();
-                    
+                    String actual = "";
+                    String res = null;
                     if(estaRegando(idWS)){
-                        WM_Central.cortarAguaFuga(idWS);
+                        actual = "R";
+                        // WM_Central.cortarAguaFuga(idWS);
+                    }else{
+                        actual = "D";
                     }
 
                     esvalido = actualizarEstado(idWS, "FUGA");
+                    if(esvalido){
+                        res = "<ACK>";
+                    }else{
+                        res = "<NACK>";
+                    }
+
+                    return res + "#" + actual;
+                    
                 }
             }
             case "STOP_RIEGO" -> {
