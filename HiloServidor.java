@@ -44,7 +44,7 @@ class HiloServidor extends Thread {
                     escribirSocket(ProtocoloUtil.empaquetar(partes[0].trim()));
                 } catch (Exception e) {
                     System.out.println("Trama corrupta o LRC inválido: " + e.getMessage());
-                    escribirSocket("<NACK>");
+                    escribirSocket(ProtocoloUtil.empaquetar("<NACK>"));
                 }
                 tramaRecibida = leerSocket();
             }

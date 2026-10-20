@@ -156,7 +156,23 @@ public final class GestorCentral{
             case "BLOQUEAR" -> {
                 if(partes.length == 2){
                     String idWS = partes[1].trim();
-                    esvalido = actualizarEstado(idWS, "FUERA DE SERVICIO");
+                    String actual = "";
+                    String res = null;
+                    if(estaRegando(idWS)){
+                        actual = "R";
+                        // WM_Central.cortarAguaFuga(idWS);
+                    }else{
+                        actual = "D";
+                    }
+
+                    esvalido = actualizarEstado(idWS, "FUGA");
+                    if(esvalido){
+                        res = "<ACK>";
+                    }else{
+                        res = "<NACK>";
+                    }
+
+                    return res + "#" + actual;
                 }
             }
 
