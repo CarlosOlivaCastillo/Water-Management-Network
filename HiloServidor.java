@@ -7,6 +7,7 @@ class HiloServidor extends Thread {
     private DataInputStream flujoEntrada;
     private DataOutputStream flujoSalida;
     private GestorCentral gestorCentral;
+    private String idWS = null;
 
     public HiloServidor(Socket skCliente) {
         this.skCliente = skCliente;
@@ -25,8 +26,13 @@ class HiloServidor extends Thread {
             while (tramaRecibida != null && !tramaRecibida.equals("exit")) {
                 try {
                     String mensaje = ProtocoloUtil.desempaquetar(tramaRecibida);
+                    if(mensaje.trim().isEmpty()){
+                        // De esta forma nos aseguramos que si cae el servidor se cierra la conexión
+                        String[] partes = mensaje.split("#");
+                        idWS = partes[1].trim();
+                    }
                     String respuesta = gestorCentral.procesarPeticion(mensaje);
-                    escribirSocket(respuesta);
+                    escribirSocket(ProtocoloUtil.empaquetar(respuesta));
                 } catch (Exception e) {
                     System.out.println("Trama corrupta o LRC inválido: " + e.getMessage());
                     escribirSocket("<NACK>");
@@ -37,6 +43,7 @@ class HiloServidor extends Thread {
         } catch (IOException e) {
             System.out.println("Error en el hilo del servidor: " + e.getMessage());
         } finally {
+            gestorCentral.actualizarEstado(idWS, "DESCONECTADA");
             cerrarConexion();
         }
     }
