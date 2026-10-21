@@ -12,7 +12,6 @@ class WM_FO{
         if (args.length < 3) {
             System.out.println("Debe indicar la IP de Kafka, el puerto de Kafka y el ID del FO");
             System.out.println("$./WM_FO <ip_kafka> <puerto_kafka> <idFO>\n");
-            System.out.println("$./WM_FO <ip_kafka> <puerto_kafka> <idFO>\n");
             System.exit (1);
         }
         ipKafka = args[0];
@@ -183,7 +182,7 @@ class WM_FO{
     public static boolean numeroValido(String num){
         try{
             int duracion = Integer.parseInt(num);
-            return duracion > 0;
+            return duracion >= 0;
         }catch(NumberFormatException e){
             return false;
         }

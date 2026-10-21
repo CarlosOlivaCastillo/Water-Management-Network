@@ -200,24 +200,28 @@ public class WM_Central {
 		String idWS  = partes[1].trim();
 
 		if(accion.equals("START_RIEGO") && partes.length == 4){
-			String idFO = partes[2].trim();
-			int duracion = Integer.parseInt(partes[3].trim());
+			try {
+				String idFO = partes[2].trim();
+				int duracion = Integer.parseInt(partes[3].trim());
 
-			String valido = GestorCentral.getInstance().procesarPeticion(mensaje);
-			if(valido.equals("<ACK>")){
-				volumenActual.put(idWS, 0.);
-				enviarEngine("INICIAR_RIEGO#" + idWS, idWS);
-				enviarFO(idWS, idFO, "ACK#" + idWS);
+				String valido = GestorCentral.getInstance().procesarPeticion(mensaje);
+				if(valido.equals("<ACK>")){
+					volumenActual.put(idWS, 0.);
+					enviarEngine("INICIAR_RIEGO#" + idWS, idWS);
+					enviarFO(idWS, idFO, "ACK#" + idWS);
 
 
-				if(duracion > 0){
-					tiempoRiego(idWS, idFO, duracion);
+					if(duracion > 0){
+						tiempoRiego(idWS, idFO, duracion);
+					}else{
+
+					}
 				}else{
-
+					System.out.println("Riego rechazado para " + idWS);
+					enviarFO(idWS, idFO, "NACK#" + idWS);
 				}
-			}else{
-				System.out.println("Riego rechazado para " + idWS);
-				enviarFO(idWS, idFO, "NACK#" + idWS);
+			}catch(NumberFormatException e){
+				System.out.println("ERROR en el formato de la duracion");
 			}
 		}else if(accion.equals("STOP_RIEGO") && partes.length >= 2){
 			String idFO;

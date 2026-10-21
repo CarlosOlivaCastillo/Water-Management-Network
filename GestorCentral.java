@@ -14,7 +14,7 @@ public final class GestorCentral{
             // Establecer la conexión a la base de datos
             conexionBBDD = DriverManager.getConnection("jdbc:sqlite:watermanagement.db");
             crearTablasIniciales();
-            cargarDatos();
+            // INNECESARIO cargarDatos();
         } catch (ClassNotFoundException | SQLException e) {
             System.out.println("ERROR al conectar con la base de datos: " + e.getMessage());
         }
