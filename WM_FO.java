@@ -1,12 +1,20 @@
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.*;
+import java.time.*;
+
 import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.clients.consumer.*;
 
 class WM_FO{
     private static String ipKafka;
     private static String puertoKafka;
     private static String idFO;
     private static KafkaProducer<String, String> productor;
+
+	private static final String TOPIC_RESPUESTAS_FO = "respuestas_riego";
+    // PARA CONTROLAR LA SINCRONIZACIÓN
+    private static volatile CompletableFuture<String> esperaRespuesta;
 
     public static void main(String[] args) {
         if (args.length < 3) {
@@ -30,6 +38,7 @@ class WM_FO{
             productor.close();
         }));
 
+        iniciarConsumidor();
         ejecutarInteractivo();
     }
 
@@ -160,18 +169,26 @@ class WM_FO{
 
 
     private static void enviarKafka(String mensaje, String idWS){
+        int duracion = 15;
         ProducerRecord<String, String> ticket = new ProducerRecord<String,String>("peticiones_riego",idWS, mensaje);
-
+        esperaRespuesta = new CompletableFuture<>();
         try {
+            String[] partes = mensaje.split("#");
+            if(mensaje.startsWith("START_RIEGO") && partes.length == 4){
+                try{
+                    duracion = Integer.parseInt(partes[3].trim());
+                }catch(NumberFormatException e){
+                }
+            }
             // .get() bloqueaa la ejecución hasta recibir la respuesta
             productor.send(ticket).get();   
         } catch (Exception e) {
             System.out.println("[ERROR KAFKA] Fallo al entregar: " + e.getMessage());
         }
-
         try{
+            esperaRespuesta.get(duracion + 1, TimeUnit.SECONDS);
             Thread.sleep(4000);
-        }catch(InterruptedException e){
+        }catch(Exception e){
             System.out.println("AVISO. Pausa interrumpida");
         }
 
@@ -187,4 +204,70 @@ class WM_FO{
             return false;
         }
     }
+
+
+
+    public static void iniciarConsumidor(){
+        Thread hiloConsumidor = new Thread(() -> {
+			Properties props = new Properties();
+			props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, ipKafka + ":" + puertoKafka);
+			props.put(ConsumerConfig.GROUP_ID_CONFIG, "grupo-fo-" + idFO);
+			props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+			props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+			props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+
+			KafkaConsumer<String, String> consumidor = new KafkaConsumer<>(props);
+			consumidor.subscribe(Collections.singletonList(TOPIC_RESPUESTAS_FO));
+
+			try{
+				while(true){
+					// LEE DURANTE 1 SEGUNDO, SI LLEGA LO TRATA AL INSTANTE SI NO DEVUELVE NULL Y VUELVE AL BUCLE
+					ConsumerRecords<String, String> records = consumidor.poll(Duration.ofMillis(1000));
+					for(ConsumerRecord<String, String> record : records){
+						if(record.key() == null || !record.key().equals(idFO)){
+                            continue;
+                        }
+                        String mensaje = record.value();
+                        String pantalla = gestionarMensaje(mensaje);
+                        System.out.println("\n[CENTRAL] => " + pantalla);
+                        System.out.println("=>: ");
+
+                        if(esperaRespuesta != null && !esperaRespuesta.isDone()){
+                            if (mensaje.startsWith("FIN_RIEGO") || mensaje.startsWith("NACK") || mensaje.startsWith("FUGA")) {
+                                esperaRespuesta.complete(mensaje); // enviarKafka se despierta
+                            }
+                        }
+					}
+				}
+			}catch(Exception e){
+				System.out.println("ERROR en el hilo consumidor: " + e.getMessage());
+			}finally{
+				consumidor.close();
+			}
+		});
+		
+        hiloConsumidor.setDaemon(true);
+        hiloConsumidor.start();
+    }
+
+
+    public static String gestionarMensaje(String msg){
+        String[] partes = msg.split("#");
+        String res = partes[0].trim();
+        String idWS = partes[1].trim();
+        String litros = null;
+        if(partes.length == 3){
+            litros = partes[2].trim();
+        }
+
+        if(res.equals("ACK")){
+            return "Riego autorizado en " + idWS;
+        }else if(res.equals("NACK")){
+            return "Riego denegado en " + idWS;
+        }else if(res.equals("FUGA")){
+            return "FUGA detectada en " + idWS;
+        }else{
+            return "Fin de riego, " + litros + "litros en " + idWS;
+        }
+    } 
 }

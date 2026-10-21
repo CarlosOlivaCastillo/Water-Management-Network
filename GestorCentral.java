@@ -165,7 +165,7 @@ public final class GestorCentral{
                         actual = "D";
                     }
 
-                    esvalido = actualizarEstado(idWS, "FUGA");
+                    esvalido = actualizarEstado(idWS, "FUERA DE SERVICIO");
                     if(esvalido){
                         res = "<ACK>";
                     }else{
