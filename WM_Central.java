@@ -20,6 +20,7 @@ public class WM_Central {
 	// Planificador de tareas para controlar los tiempos
 	private static final ScheduledExecutorService temporizadorRiego = Executors.newScheduledThreadPool(4);
 	private static final ConcurrentHashMap<String, ScheduledFuture<?>> tareasTemporizadas = new ConcurrentHashMap<>();
+	private static final ConcurrentHashMap<String, Queue<String>> colasFO = new ConcurrentHashMap<>();
 
 	private static final String TOPIC_PETICIONES_FO = "peticiones_riego";
 	private static final String TOPIC_ORDENES_ENGINE = "ordenes-riego";
@@ -137,7 +138,15 @@ public class WM_Central {
 					ConsumerRecords<String, String> records = consumidor.poll(Duration.ofMillis(1000));
 					for(ConsumerRecord<String, String> record : records){
 						String mensaje = record.value();
-						procesarPeticionFO(mensaje);
+						if(mensaje == null || mensaje.isEmpty()){
+							continue;
+						}
+						String[] ordenes = mensaje.split(";");
+						if(ordenes.length > 1){
+							encolarDoc(ordenes, record.key());
+						}else{
+							procesarPeticionFO(ordenes[0]);
+						}
 					}
 				}
 			}catch(Exception e){
@@ -149,6 +158,44 @@ public class WM_Central {
 		// PARA QUE AL CERRAR EL PROGRAMA EL PROCESO MUERA
 		hiloConsumidor.setDaemon(true);
 		hiloConsumidor.start();
+	}
+
+	private static void encolarDoc(String[] ordenes, String key){
+		Queue<String> cola = new LinkedList<>();
+		String idFO = key;
+
+		for(String p : ordenes){
+			String peticion = p.trim();
+			if(!peticion.isEmpty()){
+				cola.add(peticion);
+				if(idFO == null && peticion.split("#").length >= 3){
+					idFO = peticion.split("#")[2].trim();
+				}
+			}
+		}
+
+		if(idFO != null && !cola.isEmpty()){
+			colasFO.put(idFO, cola);
+			siguienteTareaDoc(idFO);
+		}
+	}
+
+	private static void siguienteTareaDoc(String idFO){
+		Queue<String> cola = colasFO.get(idFO);
+		if(cola != null && !cola.isEmpty()){
+			String peticion = cola.poll();
+			procesarPeticionFO(peticion);
+		}else{
+			colasFO.remove(idFO);
+		}
+	}
+
+	private static void espera(String idFO){
+		if(idFO != null && colasFO.containsKey(idFO) && !colasFO.get(idFO).isEmpty()){
+			temporizadorRiego.schedule(() ->{
+				siguienteTareaDoc(idFO);
+			}, 4, TimeUnit.SECONDS);
+		}
 	}
 
 
@@ -200,8 +247,8 @@ public class WM_Central {
 		String idWS  = partes[1].trim();
 
 		if(accion.equals("START_RIEGO") && partes.length == 4){
+			String idFO = partes[2].trim();
 			try {
-				String idFO = partes[2].trim();
 				int duracion = Integer.parseInt(partes[3].trim());
 
 				String valido = GestorCentral.getInstance().procesarPeticion(mensaje);
@@ -209,7 +256,6 @@ public class WM_Central {
 					volumenActual.put(idWS, 0.);
 					enviarEngine("INICIAR_RIEGO#" + idWS, idWS);
 					enviarFO(idWS, idFO, "ACK#" + idWS);
-
 
 					if(duracion > 0){
 						tiempoRiego(idWS, idFO, duracion);
@@ -219,9 +265,11 @@ public class WM_Central {
 				}else{
 					System.out.println("Riego rechazado para " + idWS);
 					enviarFO(idWS, idFO, "NACK#" + idWS);
+					espera(idFO);
 				}
 			}catch(NumberFormatException e){
 				System.out.println("ERROR en el formato de la duracion");
+				espera(idFO);
 			}
 		}else if(accion.equals("STOP_RIEGO") && partes.length >= 2){
 			String idFO;
@@ -236,6 +284,7 @@ public class WM_Central {
 			enviarEngine("PARAR_RIEGO#" + idWS, idWS);
 			double litrosTotales = volumenActual.getOrDefault(idWS, 0.);
 			enviarFO(idWS, idFO, "FIN_RIEGO#" + idWS + "#" + litrosTotales);
+			espera(idFO);
 		}
 	}
 
@@ -250,7 +299,7 @@ public class WM_Central {
 			enviarFO(idWS, idFO, "FIN_RIEGO#" + idWS + "#" + litrosTotales);
 
 			tareasTemporizadas.remove(idWS);
-
+			espera(idFO);
 		}, duracion, TimeUnit.MINUTES);
 
 		tareasTemporizadas.put(idWS, tarea);
@@ -297,6 +346,7 @@ public class WM_Central {
 		enviarEngine("PARAR_RIEGO#" + idWS, idWS);
 		if(idFO != null){
 			enviarFO(idWS, idFO, "FUGA#" + idWS);
+			espera(idFO);
 		}
 	}
 }

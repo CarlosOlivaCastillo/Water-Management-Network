@@ -13,8 +13,6 @@ class WM_FO{
     private static KafkaProducer<String, String> productor;
 
 	private static final String TOPIC_RESPUESTAS_FO = "respuestas_riego";
-    // PARA CONTROLAR LA SINCRONIZACIÓN
-    private static volatile CompletableFuture<String> esperaRespuesta;
 
     public static void main(String[] args) {
         if (args.length < 3) {
@@ -44,9 +42,10 @@ class WM_FO{
 
 
 
-
+// CAMBIAR SOLO LEE EL FICHERO Y GENERA EL STRING ORDEN1;ORDEN2;...
     public static void ejecutarFichero(String dirDoc){
         try (Scanner sc = new Scanner(new File(dirDoc))) {
+            List<String> ordenesDoc = new ArrayList<>();
             int numlinea = 0;
 
             while(sc.hasNextLine()){
@@ -59,7 +58,7 @@ class WM_FO{
                 if(linea.toUpperCase().startsWith("STOP#")){
                     String[] partes = linea.split("#");
                     if(partes.length == 2){
-                        stopRiego(partes[1]);
+                        ordenesDoc.add("STOP_RIEGO#" + partes[1].trim() + "#" + idFO);
                     }
                 }else{
                     String[] partes = linea.split("#");
@@ -67,14 +66,19 @@ class WM_FO{
                         String idWS = partes[0].trim();
                         String duracion = partes[1].trim();
                         if(numeroValido(duracion)){
-                            ejecutarTarea(idWS, duracion);
+                            ordenesDoc.add("START_RIEGO#" + idWS + "#" + idFO + "#" + duracion);
                         }else{
                             System.out.println("AVISO. Duración inválida en la linea: " + numlinea);
                         }
                     }else if(partes.length == 1){
-                        ejecutarTarea(partes[0].trim(),"0");
+                        ordenesDoc.add("START_RIEGO#" + partes[0].trim() + "#" + idFO + "#0");
                     }
                 }
+            }
+
+            if(!ordenesDoc.isEmpty()){
+                String mensajeFichero = String.join(";", ordenesDoc);
+                enviarKafka(mensajeFichero, idFO);
             }
         }catch(FileNotFoundException e){
             System.out.println("ERROR. No se ha encontrado el archivo " + dirDoc);
@@ -116,7 +120,8 @@ class WM_FO{
                 System.out.println(" 2. Riego indefinido   : <idWS>             (Ej: WS_01)");
                 System.out.println(" 3. Parar riego manual : STOP#<idWS>        (Ej: STOP#WS_01)");
                 System.out.println(" 4. Cargar fichero     : FILE#<ruta>        (Ej: FILE#tareas.txt)");
-                System.out.println(" 5. Salir del programa : SALIR o EXIT");
+                System.out.println(" 5. Listar estaciones  : LISTAR");
+                System.out.println(" 6. Salir del programa : SALIR o EXIT");
                 continue;
             }
 
@@ -138,6 +143,11 @@ class WM_FO{
                 } else {
                     System.out.println("[AVISO] Formato incorrecto. Uso: STOP#idWS");
                 }
+                continue;
+            }
+
+            if (linea.toUpperCase().equals("LISTAR")){
+                System.out.println("CASO SIN IMPLEMENTAR");
                 continue;
             }
 
@@ -169,27 +179,12 @@ class WM_FO{
 
 
     private static void enviarKafka(String mensaje, String idWS){
-        int duracion = 15;
         ProducerRecord<String, String> ticket = new ProducerRecord<String,String>("peticiones_riego",idWS, mensaje);
-        esperaRespuesta = new CompletableFuture<>();
         try {
-            String[] partes = mensaje.split("#");
-            if(mensaje.startsWith("START_RIEGO") && partes.length == 4){
-                try{
-                    duracion = Integer.parseInt(partes[3].trim());
-                }catch(NumberFormatException e){
-                }
-            }
             // .get() bloqueaa la ejecución hasta recibir la respuesta
             productor.send(ticket).get();   
         } catch (Exception e) {
             System.out.println("[ERROR KAFKA] Fallo al entregar: " + e.getMessage());
-        }
-        try{
-            esperaRespuesta.get(duracion + 1, TimeUnit.SECONDS);
-            Thread.sleep(4000);
-        }catch(Exception e){
-            System.out.println("AVISO. Pausa interrumpida");
         }
 
         System.out.println("Canal disponible:");
@@ -231,12 +226,6 @@ class WM_FO{
                         String pantalla = gestionarMensaje(mensaje);
                         System.out.println("\n[CENTRAL] => " + pantalla);
                         System.out.println("=>: ");
-
-                        if(esperaRespuesta != null && !esperaRespuesta.isDone()){
-                            if (mensaje.startsWith("FIN_RIEGO") || mensaje.startsWith("NACK") || mensaje.startsWith("FUGA")) {
-                                esperaRespuesta.complete(mensaje); // enviarKafka se despierta
-                            }
-                        }
 					}
 				}
 			}catch(Exception e){
@@ -254,10 +243,14 @@ class WM_FO{
     public static String gestionarMensaje(String msg){
         String[] partes = msg.split("#");
         String res = partes[0].trim();
-        String idWS = partes[1].trim();
-        String litros = null;
-        if(partes.length == 3){
-            litros = partes[2].trim();
+        String idWS = "";
+        String litros = "";
+        if(partes.length > 1){
+            idWS = partes[1].trim();
+            litros = null;
+            if(partes.length == 3){
+                litros = partes[2].trim();
+            }
         }
 
         if(res.equals("ACK")){
@@ -267,7 +260,7 @@ class WM_FO{
         }else if(res.equals("FUGA")){
             return "FUGA detectada en " + idWS;
         }else{
-            return "Fin de riego, " + litros + "litros en " + idWS;
+            return "Fin de riego, " + litros + " litros en " + idWS;
         }
     } 
 }
