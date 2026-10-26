@@ -1,0 +1,46 @@
+# ==============================================================================
+# ESCENARIO PC LAB 1: Despliegue de Operarios de Campo WM_FO (1) y WM_FO (2)
+# Figura 4 del enunciado: varios WM_FO en un PC de laboratorio conectados al Cloud
+#
+# Uso en PowerShell (apuntando al Broker Kafka en Railway o AWS):
+#   $env:IP_KAFKA="TU_IP_O_HOST_KAFKA"; $env:PUERTO_KAFKA="9092"
+#
+#   # Terminal 1 - Operario 1 (FO_01) interactivo:
+#   docker compose -f docker-compose.lab-fo.yml run --rm fo_01
+#
+#   # Terminal 2 - Operario 2 (FO_02) interactivo:
+#   docker compose -f docker-compose.lab-fo.yml run --rm fo_02
+#
+#   # O ejecutar directamente el fichero de lotes tareas.txt con FO_01:
+#   docker compose -f docker-compose.lab-fo.yml run --rm fo_01 tareas.txt
+# ==============================================================================
+services:
+  fo_01:
+    image: wm-fo:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.fo
+    container_name: wm_fo_01
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: ${IP_KAFKA:-host.docker.internal}
+      PUERTO_KAFKA: ${PUERTO_KAFKA:-9092}
+      ID_FO: FO_01
+    volumes:
+      - ./tareas.txt:/app/tareas.txt
+
+  fo_02:
+    image: wm-fo:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.fo
+    container_name: wm_fo_02
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: ${IP_KAFKA:-host.docker.internal}
+      PUERTO_KAFKA: ${PUERTO_KAFKA:-9092}
+      ID_FO: FO_02
+    volumes:
+      - ./tareas.txt:/app/tareas.txt

@@ -1,0 +1,5 @@
+# Fichero de órdenes de riego por lotes para WM_FO
+# Formato: <ID_WS>#<DURACION_SEGUNDOS> (Tras cada servicio WM_FO espera 4 segundos antes del siguiente)
+WS_01#6
+WS_02#5
+WS_01#4
