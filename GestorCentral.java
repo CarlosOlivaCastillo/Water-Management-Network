@@ -213,8 +213,8 @@ public final class GestorCentral{
 
     public synchronized boolean actualizarEstado(String idWS, String estado){
         String com = "UPDATE estaciones SET estado = ?, "
-                + "idFO = CASE WHEN ? IN ('DISPONIBLE', 'DESCONECTADA', 'FUERA DE SERVICIO') THEN NULL ELSE idFO END, "
-                + "duracion = CASE WHEN ? IN ('DISPONIBLE', 'DESCONECTADA', 'FUERA DE SERVICIO') THEN 0 ELSE duracion END "
+                + "idFO = CASE WHEN ? IN ('DISPONIBLE', 'DESCONECTADA', 'FUERA DE SERVICIO', 'FUGA') THEN NULL ELSE idFO END, "
+                + "duracion = CASE WHEN ? IN ('DISPONIBLE', 'DESCONECTADA', 'FUERA DE SERVICIO', 'FUGA') THEN 0 ELSE duracion END "
                 + "WHERE idWS = ?";
         try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com)) {
             pstmt.setString(1, estado);
