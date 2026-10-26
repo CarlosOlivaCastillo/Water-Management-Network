@@ -32,7 +32,7 @@ class HiloServidor extends Thread {
                         if (partes.length > 1) {
                             idWS = partes[1].trim();
                         }
-                        if ("REGISTRO".equals(accion) || "FUGA".equals(accion) || "AVERIA".equals(accion)) {
+                    if ("REGISTRO".equals(accion) || "FUGA".equals(accion) || "AVERIA".equals(accion) || "FIN_FUGA".equals(accion)) {
                             esMonitor = true;
                         }
                     }
@@ -44,6 +44,9 @@ class HiloServidor extends Thread {
                         } else {
                             ServidorWebCentral.registrarEvento("¡ALERTA! Fuga reportada en estación " + idWS);
                         }
+                    } else if ("FIN_FUGA".equals(accion) && idWS != null) {
+                        ServidorWebCentral.registrarEvento("✅ Contingencia resuelta en estación " + idWS + " (Vuelve a DISPONIBLE)");
+                        System.out.println("\n[CENTRAL] Contingencia resuelta en " + idWS + ". Estación disponible nuevamente.");
                     } else if ("REGISTRO".equals(accion) && idWS != null) {
                         ServidorWebCentral.registrarEvento("Estación registrada y conectada: " + idWS);
                     }

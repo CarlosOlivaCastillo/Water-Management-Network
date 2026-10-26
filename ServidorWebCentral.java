@@ -811,6 +811,11 @@ public class ServidorWebCentral {
                                     <span>Activar Estación</span>
                                 </button>
                             ` : ''}
+                            ${e.estado === 'FUGA' ? `
+                                <button onclick="cambiarEstadoCentral('${e.idWS}', 'ACTIVAR')" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition">
+                                    <span>Resolver Avería (OK)</span>
+                                </button>
+                            ` : ''}
                         </div>
                     `;
                     grid.appendChild(card);

@@ -179,7 +179,7 @@ public final class GestorCentral {
                     return res + "#" + actual;
                 }
             }
-            case "ACTIVAR" -> {
+            case "ACTIVAR", "FIN_FUGA" -> {
                 if (partes.length == 2) {
                     String idWS = partes[1].trim();
                     esvalido = actualizarEstado(idWS, "DISPONIBLE");

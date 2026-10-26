@@ -1,0 +1,32 @@
+# Dockerfile principal para despliegue Cloud (Railway / AWS) de WM_Central
+FROM eclipse-temurin:17-jdk-alpine AS builder
+
+WORKDIR /app
+
+# Copiar librerías y código fuente
+COPY lib/ ./lib/
+COPY kafka-clients.jar slf4j-api.jar slf4j-simple.jar ./
+COPY ProtocoloUtil.java HiloServidor.java GestorCentral.java ServidorWebCentral.java WM_Central.java ./
+
+# Compilar
+RUN javac -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" ProtocoloUtil.java HiloServidor.java GestorCentral.java ServidorWebCentral.java WM_Central.java
+
+# Imagen final JRE
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+
+# Copiar librerías y clases compiladas
+COPY lib/ ./lib/
+COPY kafka-clients.jar slf4j-api.jar slf4j-simple.jar ./
+COPY --from=builder /app/*.class ./
+
+# Variables de entorno por defecto (sobreescribibles en Railway / AWS)
+ENV PUERTO_CENTRAL=8080 \
+    IP_KAFKA=broker \
+    PUERTO_KAFKA=29092 \
+    PORT=8081
+
+EXPOSE 8080 8081
+
+ENTRYPOINT ["sh", "-c", "java -cp '.:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar' WM_Central ${PUERTO_CENTRAL} ${IP_KAFKA} ${PUERTO_KAFKA} ${PORT:-8081}"]
