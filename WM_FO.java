@@ -1,287 +1,287 @@
 import java.io.*;
-import java.net.*;
-import java.util.Properties;
-import java.util.Scanner;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
+
+import org.apache.kafka.clients.consumer.*;
+import org.apache.kafka.clients.producer.*;
 
 public class WM_FO {
-    private String ipKafka;
-    private String puertoKafka;
-    private String idFO;
-    private String ipCentral;
-    private int puertoCentral;
-    private KafkaProducer<String, String> producer;
+    private static String ipKafka;
+    private static String puertoKafka;
+    private static String idFO;
+    private static KafkaProducer<String, String> productor;
 
-    public WM_FO(String ipKafka, String puertoKafka, String idFO, String ipCentral, int puertoCentral) {
-        this.ipKafka = ipKafka;
-        this.puertoKafka = puertoKafka;
-        this.idFO = idFO;
-        this.ipCentral = ipCentral;
-        this.puertoCentral = puertoCentral;
-        inicializarKafkaProducer();
-    }
+    private static final String TOPIC_PETICIONES_FO = "peticiones_riego";
+    private static final String TOPIC_RESPUESTAS_FO = "respuestas_riego";
 
-    private void inicializarKafkaProducer() {
-        Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, ipKafka + ":" + puertoKafka);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
-        props.put(ProducerConfig.ACKS_CONFIG, "1");
-        props.put(ProducerConfig.RETRIES_CONFIG, 1);
-        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 3000);
-        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 3000);
-        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 4000);
-
-        try {
-            this.producer = new KafkaProducer<>(props);
-            System.out.println("[WM_FO] Productor de Kafka conectado a " + ipKafka + ":" + puertoKafka);
-        } catch (Exception e) {
-            System.err.println("[WM_FO] Error al conectar con Kafka: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Solicita autorización a Central por Sockets TCP.
-     * Retorna true si Central responde <ACK>.
-     */
-    public boolean solicitarAutorizacion(String idWS, int duracion) {
-        System.out.println("[WM_FO] Solicitando autorización a Central (" + ipCentral + ":" + puertoCentral + ") para regar " + idWS + " (" + duracion + "s)...");
-        try (Socket skCentral = new Socket(ipCentral, puertoCentral);
-             DataOutputStream out = new DataOutputStream(skCentral.getOutputStream());
-             DataInputStream in = new DataInputStream(skCentral.getInputStream())) {
-
-            String peticion = "START_RIEGO#" + idWS + "#" + idFO + "#" + duracion;
-            String trama = ProtocoloUtil.empaquetar(peticion);
-            out.writeUTF(trama);
-
-            String respuesta = in.readUTF();
-            System.out.println("[WM_FO] Respuesta de Central: " + respuesta);
-
-            out.writeUTF("exit");
-            return "<ACK>".equals(respuesta);
-
-        } catch (Exception e) {
-            System.err.println("[WM_FO] Error de comunicación con Central: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Notifica a Central el fin del riego por Sockets TCP.
-     */
-    public boolean notificarFinRiego(String idWS) {
-        System.out.println("[WM_FO] Notificando fin de riego a Central para " + idWS + "...");
-        try (Socket skCentral = new Socket(ipCentral, puertoCentral);
-             DataOutputStream out = new DataOutputStream(skCentral.getOutputStream());
-             DataInputStream in = new DataInputStream(skCentral.getInputStream())) {
-
-            String peticion = "STOP_RIEGO#" + idWS;
-            String trama = ProtocoloUtil.empaquetar(peticion);
-            out.writeUTF(trama);
-
-            String respuesta = in.readUTF();
-            System.out.println("[WM_FO] Confirmación fin de riego de Central: " + respuesta);
-
-            out.writeUTF("exit");
-            return "<ACK>".equals(respuesta);
-
-        } catch (Exception e) {
-            System.err.println("[WM_FO] Error al notificar fin de riego a Central: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Publica una orden en el topic de Kafka 'ordenes-riego'.
-     */
-    public void publicarOrdenKafka(String orden) {
-        if (producer == null) {
-            System.err.println("[WM_FO] Error: Productor de Kafka no disponible.");
-            return;
-        }
-        try {
-            producer.send(new ProducerRecord<>("ordenes-riego", orden), (metadata, exception) -> {
-                if (exception != null) {
-                    System.err.println("[WM_FO -> Kafka] Fallo al entregar mensaje a Kafka: " + exception.getMessage());
-                }
-            });
-            System.out.println("[WM_FO -> Kafka] Publicada orden: " + orden);
-        } catch (Exception e) {
-            System.err.println("[WM_FO] Error al enviar orden a Kafka: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Ejecuta una tarea de riego completa para una estación dada.
-     */
-    public void ejecutarRiego(String idWS, int duracion) {
-        System.out.println("\n--------------------------------------------------");
-        System.out.println("[WM_FO] INICIANDO ORDEN DE RIEGO");
-        System.out.println("  Operador: " + idFO);
-        System.out.println("  Estación: " + idWS);
-        System.out.println("  Duración: " + duracion + " segundos");
-        System.out.println("--------------------------------------------------");
-
-        // 1. Solicitar autorización a Central
-        boolean autorizada = solicitarAutorizacion(idWS, duracion);
-        if (!autorizada) {
-            System.out.println("[WM_FO] [DENEGADO] La Central denegó el riego para " + idWS + " (estación ocupada, averiada o inaccesible).");
-            return;
-        }
-
-        // 2. Enviar orden a Kafka para abrir electroválvula
-        String ordenInicio = "INICIAR_RIEGO#" + idWS;
-        publicarOrdenKafka(ordenInicio);
-        System.out.println("[WM_FO] Electroválvula activada. Regando durante " + duracion + "s...");
-
-        // 3. Temporizador de riego
-        try {
-            for (int i = duracion; i > 0; i--) {
-                System.out.print("\r[WM_FO] Tiempo restante de riego: " + i + "s...   ");
-                Thread.sleep(1000);
-            }
-            System.out.println("\r[WM_FO] Tiempo de riego finalizado.                     ");
-        } catch (InterruptedException e) {
-            System.out.println("\n[WM_FO] Riego interrumpido.");
-        }
-
-        // 4. Enviar orden a Kafka para cerrar electroválvula
-        String ordenParar = "PARAR_RIEGO#" + idWS;
-        publicarOrdenKafka(ordenParar);
-
-        // 5. Notificar a Central fin de riego
-        notificarFinRiego(idWS);
-        System.out.println("[WM_FO] [COMPLETADO] Sesión de riego finalizada con éxito.");
-    }
-
-    /**
-     * Ejecuta órdenes desde un fichero de texto por lotes.
-     * Formato por línea: ID_WS DURACION (ej: WS_01 10)
-     */
-    public void procesarFichero(String rutaFichero) {
-        File f = new File(rutaFichero);
-        if (!f.exists()) {
-            System.err.println("[WM_FO] El fichero especificado no existe: " + rutaFichero);
-            return;
-        }
-
-        System.out.println("[WM_FO] Procesando fichero de órdenes: " + rutaFichero);
-        try (BufferedReader br = new BufferedReader(new FileReader(f))) {
-            String linea;
-            int numLinea = 0;
-            while ((linea = br.readLine()) != null) {
-                linea = linea.trim();
-                if (linea.isEmpty() || linea.startsWith("#")) continue;
-
-                numLinea++;
-                String[] partes = linea.split("[,#\\s]+");
-                if (partes.length >= 2) {
-                    String idWS = partes[0];
-                    try {
-                        int duracion = Integer.parseInt(partes[1]);
-                        System.out.println("\n=== Ejecutando orden #" + numLinea + " del fichero ===");
-                        ejecutarRiego(idWS, duracion);
-                    } catch (NumberFormatException nfe) {
-                        System.err.println("[WM_FO] Duración inválida en línea " + numLinea + ": " + linea);
-                    }
-                } else {
-                    System.err.println("[WM_FO] Formato de línea inválido en línea " + numLinea + ": " + linea);
-                }
-            }
-            System.out.println("\n[WM_FO] Fin del procesamiento del fichero.");
-        } catch (Exception e) {
-            System.err.println("[WM_FO] Error al leer el fichero: " + e.getMessage());
-        }
-    }
-
-    public void cerrar() {
-        if (producer != null) {
-            producer.close();
-        }
-    }
+    // Para sincronizar la espera hasta que termine cada riego o llegue un rechazo/fuga
+    private static volatile CompletableFuture<String> esperaRespuesta;
 
     public static void main(String[] args) {
         if (args.length < 3) {
             System.out.println("=================================================================");
             System.out.println("  Uso de WM_FO (Field Operator):");
-            System.out.println("  1. Modo Directo:   java WM_FO <ip_kafka> <puerto_kafka> <idFO> <idWS> <duracion>");
+            System.out.println("  1. Modo Consola:   java WM_FO <ip_kafka> <puerto_kafka> <idFO>");
             System.out.println("  2. Modo Fichero:   java WM_FO <ip_kafka> <puerto_kafka> <idFO> <ruta_fichero>");
-            System.out.println("  3. Modo Consola:   java WM_FO <ip_kafka> <puerto_kafka> <idFO>");
+            System.out.println("  3. Modo Directo:   java WM_FO <ip_kafka> <puerto_kafka> <idFO> <idWS> <duracion>");
             System.out.println("=================================================================");
             System.exit(1);
         }
 
-        String ipKafka = args[0];
-        String puertoKafka = args[1];
-        String idFO = args[2];
+        ipKafka = args[0];
+        puertoKafka = args[1];
+        idFO = args[2];
 
-        // IP y Puerto de Central (por variables de entorno o valores por defecto)
-        String ipCentral = System.getenv("IP_CENTRAL") != null ? System.getenv("IP_CENTRAL") : "localhost";
-        int puertoCentral = 8080;
-        if (System.getenv("PUERTO_CENTRAL") != null) {
-            try {
-                puertoCentral = Integer.parseInt(System.getenv("PUERTO_CENTRAL"));
-            } catch (NumberFormatException ignored) {}
-        }
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, ipKafka + ":" + puertoKafka);
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+        productor = new KafkaProducer<>(props);
 
-        WM_FO fo = new WM_FO(ipKafka, puertoKafka, idFO, ipCentral, puertoCentral);
+        // Asegurar cierre limpio al terminar
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("\nCerrando productor de Kafka de forma segura...");
+            if (productor != null) {
+                productor.close();
+            }
+        }));
 
-        Runtime.getRuntime().addShutdownHook(new Thread(fo::cerrar));
+        iniciarConsumidor();
+
+        // Pequeña pausa inicial para asegurar que el consumidor de Kafka esté suscrito
+        try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
 
         if (args.length == 4) {
-            // Modo fichero
-            String rutaFichero = args[3];
-            fo.procesarFichero(rutaFichero);
+            ejecutarFichero(args[3]);
         } else if (args.length >= 5) {
-            // Modo directo: idWS duracion
-            String idWS = args[3];
-            int duracion = 10;
-            try {
-                duracion = Integer.parseInt(args[4]);
-            } catch (NumberFormatException e) {
-                System.err.println("Duración no válida, usando 10s por defecto.");
-            }
-            fo.ejecutarRiego(idWS, duracion);
+            ejecutarTarea(args[3].trim(), args[4].trim());
         } else {
-            // Modo interactivo por consola
-            Scanner scanner = new Scanner(System.in);
-            boolean salir = false;
+            ejecutarInteractivo();
+        }
+    }
 
-            while (!salir) {
-                System.out.println("\n=== PANEL FIELD OPERATOR [" + idFO + "] ===");
-                System.out.println("1. Solicitar y ejecutar riego manual");
-                System.out.println("2. Cargar fichero de órdenes por lotes");
-                System.out.println("3. Salir");
-                System.out.print("Selecciona una opción: ");
-
-                String opc = scanner.nextLine().trim();
-                switch (opc) {
-                    case "1" -> {
-                        System.out.print("ID de la Estación (ej. WS_01): ");
-                        String ws = scanner.nextLine().trim();
-                        System.out.print("Duración en segundos: ");
-                        String durStr = scanner.nextLine().trim();
-                        try {
-                            int dur = Integer.parseInt(durStr);
-                            fo.ejecutarRiego(ws, dur);
-                        } catch (NumberFormatException e) {
-                            System.out.println("Duración inválida.");
-                        }
-                    }
-                    case "2" -> {
-                        System.out.print("Ruta del fichero: ");
-                        String ruta = scanner.nextLine().trim();
-                        fo.procesarFichero(ruta);
-                    }
-                    case "3" -> salir = true;
-                    default -> System.out.println("Opción no válida.");
-                }
-            }
-            scanner.close();
+    public static void ejecutarFichero(String dirDoc) {
+        File f = new File(dirDoc);
+        if (!f.exists()) {
+            System.out.println("ERROR. No se ha encontrado el archivo " + dirDoc);
+            return;
         }
 
-        fo.cerrar();
+        System.out.println("[WM_FO] Procesando fichero de órdenes: " + dirDoc);
+        try (Scanner sc = new Scanner(f)) {
+            int numlinea = 0;
+
+            while (sc.hasNextLine()) {
+                numlinea++;
+                String linea = sc.nextLine().trim();
+                if (linea.isEmpty() || linea.startsWith("#")) {
+                    continue;
+                }
+
+                if (linea.toUpperCase().startsWith("STOP#")) {
+                    String[] partes = linea.split("#");
+                    if (partes.length == 2) {
+                        stopRiego(partes[1].trim());
+                    }
+                } else {
+                    String[] partes = linea.split("[,#\\s]+");
+                    if (partes.length >= 2) {
+                        String idWS = partes[0].trim();
+                        String duracion = partes[1].trim();
+                        if (numeroValido(duracion)) {
+                            System.out.println("\n=== Ejecutando orden #" + numlinea + " del fichero (" + idWS + " - " + duracion + "s) ===");
+                            ejecutarTarea(idWS, duracion);
+                        } else {
+                            System.out.println("AVISO. Duración inválida en la línea: " + numlinea);
+                        }
+                    } else if (partes.length == 1) {
+                        ejecutarTarea(partes[0].trim(), "0");
+                    }
+                }
+            }
+            System.out.println("\n[WM_FO] Fin del procesamiento del fichero.");
+        } catch (FileNotFoundException e) {
+            System.out.println("ERROR. No se ha encontrado el archivo " + dirDoc);
+        } catch (Exception e) {
+            System.out.println("ERROR durante la ejecución del fichero: " + e.getMessage());
+        }
+    }
+
+    public static void ejecutarTarea(String idWS, String duracion) {
+        String mensaje = "START_RIEGO#" + idWS + "#" + idFO + "#" + duracion;
+        enviarKafka(mensaje, idWS);
+    }
+
+    public static void ejecutarInteractivo() {
+        Scanner consola = new Scanner(System.in);
+        System.out.println("=== PANEL FIELD OPERATOR [" + idFO + "] ===");
+        System.out.println("Modo interactivo. Escriba 'AYUDA' para ver comandos.");
+
+        while (true) {
+            System.out.print("[" + idFO + "] => ");
+            if (!consola.hasNextLine()) {
+                try { Thread.sleep(2000); } catch (InterruptedException e) { break; }
+                continue;
+            }
+            String linea = consola.nextLine().trim();
+
+            if (linea.isEmpty()) {
+                continue;
+            }
+
+            if (linea.equalsIgnoreCase("EXIT") || linea.equalsIgnoreCase("SALIR") || linea.equals("3")) {
+                System.out.println("Saliendo...");
+                break;
+            }
+
+            if (linea.equalsIgnoreCase("AYUDA") || linea.equalsIgnoreCase("HELP")) {
+                System.out.println("\n--- COMANDOS DISPONIBLES ---");
+                System.out.println(" 1. Riego con duración : <idWS>#<segundos>   (Ej: WS_01#10)");
+                System.out.println(" 2. Riego indefinido   : <idWS>              (Ej: WS_01)");
+                System.out.println(" 3. Parar riego manual : STOP#<idWS>         (Ej: STOP#WS_01)");
+                System.out.println(" 4. Cargar fichero     : FILE#<ruta>         (Ej: FILE#tareas.txt)");
+                System.out.println(" 5. Salir del programa : SALIR o EXIT");
+                continue;
+            }
+
+            if (linea.toUpperCase().startsWith("FILE#") || linea.toUpperCase().startsWith("CARGAR#")) {
+                String[] partes = linea.split("#");
+                if (partes.length == 2 && !partes[1].trim().isEmpty()) {
+                    ejecutarFichero(partes[1].trim());
+                } else {
+                    System.out.println("[AVISO] Formato incorrecto. Uso: FILE#ruta_archivo.txt");
+                }
+                continue;
+            }
+
+            if (linea.toUpperCase().startsWith("STOP#")) {
+                String[] partes = linea.split("#");
+                if (partes.length == 2 && !partes[1].trim().isEmpty()) {
+                    stopRiego(partes[1].trim());
+                } else {
+                    System.out.println("[AVISO] Formato incorrecto. Uso: STOP#idWS");
+                }
+                continue;
+            }
+
+            String[] partes = linea.split("#");
+            if (partes.length == 2) {
+                String idWS = partes[0].trim();
+                String duracion = partes[1].trim();
+
+                if (numeroValido(duracion)) {
+                    ejecutarTarea(idWS, duracion);
+                } else {
+                    System.out.println("ERROR. La duración debe ser un número entero mayor o igual a 0.");
+                }
+            } else if (partes.length == 1) {
+                String idWS = partes[0].trim();
+                ejecutarTarea(idWS, "0");
+            } else {
+                System.out.println("ERROR. Formato no válido. Escriba 'AYUDA' para ver los comandos.");
+            }
+        }
+        consola.close();
+    }
+
+    public static void stopRiego(String idWS) {
+        String mensaje = "STOP_RIEGO#" + idWS + "#" + idFO;
+        enviarKafka(mensaje, idWS);
+    }
+
+    private static void enviarKafka(String mensaje, String idWS) {
+        int duracion = 15;
+        ProducerRecord<String, String> ticket = new ProducerRecord<>(TOPIC_PETICIONES_FO, idWS, mensaje);
+        esperaRespuesta = new CompletableFuture<>();
+        try {
+            String[] partes = mensaje.split("#");
+            if (mensaje.startsWith("START_RIEGO") && partes.length == 4) {
+                try {
+                    duracion = Integer.parseInt(partes[3].trim());
+                } catch (NumberFormatException ignored) {}
+            }
+            productor.send(ticket).get();
+            System.out.println("[WM_FO -> Kafka] Petición enviada a Central: " + mensaje);
+        } catch (Exception e) {
+            System.out.println("[ERROR KAFKA] Fallo al entregar: " + e.getMessage());
+        }
+        try {
+            if (duracion > 0) {
+                esperaRespuesta.get(duracion + 5, TimeUnit.SECONDS);
+            } else {
+                esperaRespuesta.get(10, TimeUnit.SECONDS);
+            }
+            System.out.println("[WM_FO] Esperando 4 segundos reglamentarios antes de la siguiente operación...");
+            Thread.sleep(4000);
+        } catch (Exception e) {
+            System.out.println("AVISO. Espera de respuesta finalizada o interrumpida.");
+        }
+
+        System.out.println("Canal disponible:");
+    }
+
+    public static boolean numeroValido(String num) {
+        try {
+            int duracion = Integer.parseInt(num);
+            return duracion >= 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    public static void iniciarConsumidor() {
+        Thread hiloConsumidor = new Thread(() -> {
+            Properties props = new Properties();
+            props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, ipKafka + ":" + puertoKafka);
+            props.put(ConsumerConfig.GROUP_ID_CONFIG, "grupo-fo-" + idFO);
+            props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+            props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+            props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+
+            try (KafkaConsumer<String, String> consumidor = new KafkaConsumer<>(props)) {
+                consumidor.subscribe(Collections.singletonList(TOPIC_RESPUESTAS_FO));
+
+                while (true) {
+                    ConsumerRecords<String, String> records = consumidor.poll(Duration.ofMillis(500));
+                    for (ConsumerRecord<String, String> record : records) {
+                        if (record.key() == null || !record.key().equals(idFO)) {
+                            continue;
+                        }
+                        String mensaje = record.value();
+                        String pantalla = gestionarMensaje(mensaje);
+                        System.out.println("\n[CENTRAL => " + idFO + "] " + pantalla);
+
+                        if (esperaRespuesta != null && !esperaRespuesta.isDone()) {
+                            if (mensaje.startsWith("FIN_RIEGO") || mensaje.startsWith("NACK") || mensaje.startsWith("FUGA")) {
+                                esperaRespuesta.complete(mensaje);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("ERROR en el hilo consumidor de FO: " + e.getMessage());
+            }
+        });
+
+        hiloConsumidor.setDaemon(true);
+        hiloConsumidor.start();
+    }
+
+    public static String gestionarMensaje(String msg) {
+        String[] partes = msg.split("#");
+        String res = partes[0].trim();
+        String idWS = partes.length > 1 ? partes[1].trim() : "";
+        String litros = partes.length >= 3 ? partes[2].trim() : "0.0";
+
+        if (res.equals("ACK")) {
+            return "Riego AUTORIZADO en estación " + idWS + ". Abriendo electroválvula...";
+        } else if (res.equals("NACK")) {
+            return "Riego DENEGADO en estación " + idWS + " (No disponible, ocupada o en avería).";
+        } else if (res.equals("FUGA")) {
+            return "¡ALERTA! FUGA detectada en estación " + idWS + ". Suministro cancelado inmediatamente.";
+        } else {
+            return "FIN DE RIEGO en estación " + idWS + " | Resumen volumen total consumido: " + litros + " litros.";
+        }
     }
 }
