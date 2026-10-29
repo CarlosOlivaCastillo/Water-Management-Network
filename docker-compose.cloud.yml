@@ -12,6 +12,7 @@ services:
     ports:
       - "9092:9092"
     environment:
+      KAFKA_HEAP_OPTS: "-Xmx350M -Xms350M"
       KAFKA_CFG_NODE_ID: 0
       KAFKA_CFG_PROCESS_ROLES: controller,broker
       KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,PLAINTEXT_INTERNAL://:29092,CONTROLLER://:9093
