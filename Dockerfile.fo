@@ -5,23 +5,24 @@ WORKDIR /app
 
 # Copiar librerías y código fuente
 COPY kafka-clients.jar slf4j-api.jar slf4j-simple.jar ./
-COPY ProtocoloUtil.java WM_FO.java* ./
+COPY ProtocoloUtil.java WM_FO.java ./
 
-# Compilar condicionalmente si existe WM_FO.java
-RUN if [ -f WM_FO.java ]; then javac -cp ".:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" ProtocoloUtil.java WM_FO.java; fi
+# Compilar clases
+RUN javac -cp ".:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" ProtocoloUtil.java WM_FO.java
 
 # Imagen final ligera JRE
 FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
-# Copiar librerías y clases compiladas
+# Copiar librerías, clases compiladas y fichero de lote de pruebas
 COPY kafka-clients.jar slf4j-api.jar slf4j-simple.jar ./
 COPY --from=builder /app/*.class ./
+COPY tareas.txt ./
 
 # Variables de entorno por defecto
 ENV IP_KAFKA=broker \
-    PUERTO_KAFKA=9092 \
+    PUERTO_KAFKA=29092 \
     ID_FO=FO_01
 
-ENTRYPOINT ["sh", "-c", "java -cp '.:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar' WM_FO ${IP_KAFKA} ${PUERTO_KAFKA} ${ID_FO}"]
+ENTRYPOINT ["sh", "-c", "java -cp '.:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar' WM_FO ${IP_KAFKA} ${PUERTO_KAFKA} ${ID_FO} \"$@\"", "--"]

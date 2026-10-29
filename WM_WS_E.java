@@ -35,15 +35,55 @@ public class WM_WS_E {
 
         System.out.println("Iniciando Engine para Estación [" + idWS + "]...");
 
-        // 1. Hilo de simulación de averías (Teclado)
+        // Propiedades del productor Kafka (para telemetría y acciones manuales de la estación)
+        Properties producerProps = new Properties();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, ipKafka + ":" + puertoKafka);
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+        KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try { producer.close(); } catch (Exception ignored) {}
+        }));
+
+        // 1. Hilo de menú interactivo y simulación/resolución de averías (Teclado)
         Thread hiloTeclado = new Thread(() -> {
-            Scanner scanner = new Scanner(System.in);
-            System.out.println("Pulsa ENTER en cualquier momento para simular un KO (Fuga)...");
-            scanner.nextLine();
-            averiaSimulada = true;
-            System.out.println("¡Avería simulada activada! El próximo reporte será KO.");
-            scanner.close();
+            try (Scanner scanner = new Scanner(System.in)) {
+                mostrarMenuEstacion(idWS);
+                while (true) {
+                    if (!scanner.hasNextLine()) {
+                        Thread.sleep(2000);
+                        continue;
+                    }
+                    String entrada = scanner.nextLine().trim();
+                    if (entrada.isEmpty() || entrada.equals("1") || entrada.equalsIgnoreCase("AVERIA") || entrada.equalsIgnoreCase("FUGA")) {
+                        averiaSimulada = !averiaSimulada;
+                        if (averiaSimulada) {
+                            regando = false;
+                            System.out.println(">>> [ALERTA ENGINE] ¡Avería (Fuga) simulada ACTIVADA! El próximo reporte al Monitor será KO.");
+                        } else {
+                            System.out.println(">>> [RECUPERACIÓN ENGINE] ¡Contingencia resuelta! El próximo reporte al Monitor será OK (Estación volverá a DISPONIBLE).");
+                        }
+                    } else if (entrada.equals("2") || entrada.equalsIgnoreCase("RIEGO") || entrada.equalsIgnoreCase("START")) {
+                        if (averiaSimulada) {
+                            System.out.println(">>> [AVISO] No se puede iniciar riego manual mientras exista una fuga activa.");
+                        } else {
+                            String peticion = "START_RIEGO#" + idWS + "#CENTRAL#0";
+                            producer.send(new ProducerRecord<>("peticiones_riego", idWS, peticion));
+                            System.out.println(">>> [MENÚ WS] Solicitud de inicio de riego manual enviada a Central.");
+                        }
+                    } else if (entrada.equals("3") || entrada.equalsIgnoreCase("PARAR") || entrada.equalsIgnoreCase("STOP")) {
+                        String peticion = "STOP_RIEGO#" + idWS + "#CENTRAL";
+                        producer.send(new ProducerRecord<>("peticiones_riego", idWS, peticion));
+                        regando = false;
+                        System.out.println(">>> [MENÚ WS] Finalización manual de suministro solicitada desde la estación.");
+                    } else if (entrada.equalsIgnoreCase("MENU") || entrada.equalsIgnoreCase("AYUDA")) {
+                        mostrarMenuEstacion(idWS);
+                    }
+                }
+            } catch (Exception ignored) {}
         });
+        hiloTeclado.setDaemon(true);
         hiloTeclado.start();
 
         // 2. Hilo Consumidor de Kafka (Asíncrono)
@@ -63,15 +103,23 @@ public class WM_WS_E {
                     ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                     for (ConsumerRecord<String, String> record : records) {
                         String mensaje = record.value();
-                        
-                        // Si la orden es abrir el agua para esta estación en concreto o global
-                        if (mensaje.contains("INICIAR_RIEGO")) {
-                            volumenAcumulado = 0.0; // Reiniciar acumulador de la sesión
-                            regando = true;
-                            System.out.println(">>> ORDEN RECIBIDA: Electroválvula ABIERTA. Comenzando riego.");
-                        } else if (mensaje.contains("PARAR_RIEGO")) {
-                            regando = false;
-                            System.out.println(">>> ORDEN RECIBIDA: Electroválvula CERRADA. Riego detenido.");
+                        if (mensaje != null) {
+                            mensaje = mensaje.trim();
+                            String[] partes = mensaje.split("#");
+                            String comando = partes[0];
+                            String idDestino = partes.length > 1 ? partes[1] : null;
+
+                            // Comprobar si la orden es global o va dirigida a esta estación
+                            if (idDestino == null || idDestino.equalsIgnoreCase(idWS) || idDestino.equalsIgnoreCase("ALL")) {
+                                if ("INICIAR_RIEGO".equalsIgnoreCase(comando)) {
+                                    volumenAcumulado = 0.0; // Reiniciar acumulador de la sesión
+                                    regando = true;
+                                    System.out.println(">>> ORDEN RECIBIDA: Electroválvula ABIERTA para [" + idWS + "]. Comenzando riego.");
+                                } else if ("PARAR_RIEGO".equalsIgnoreCase(comando)) {
+                                    regando = false;
+                                    System.out.println(">>> ORDEN RECIBIDA: Electroválvula CERRADA para [" + idWS + "]. Riego detenido.");
+                                }
+                            }
                         }
                     }
                 }
@@ -83,12 +131,7 @@ public class WM_WS_E {
 
         // 3. Hilo Productor de Telemetría (Kafka)
         Thread hiloTelemetria = new Thread(() -> {
-            Properties producerProps = new Properties();
-            producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, ipKafka + ":" + puertoKafka);
-            producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
-            producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
-
-            try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps)) {
+            try {
                 System.out.println("Productor de Telemetría iniciado. Publicando en 'telemetria-estaciones' cuando se active el riego.");
                 while (true) {
                     if (regando) {
@@ -113,17 +156,33 @@ public class WM_WS_E {
         });
         hiloTelemetria.start();
 
-        // 4. Bucle principal: Conexión Sockets con el Monitor
-        try {
-            Socket skMonitor = new Socket(ipMonitor, puertoMonitor);
-            DataInputStream flujoEntrada = new DataInputStream(skMonitor.getInputStream());
-            DataOutputStream flujoSalida = new DataOutputStream(skMonitor.getOutputStream());
-            System.out.println("Conectado al Monitor localmente.");
+        // 4. Bucle principal: Conexión Sockets con el Monitor (con reintentos)
+        Socket skMonitor = null;
+        DataInputStream flujoEntrada = null;
+        DataOutputStream flujoSalida = null;
 
+        for (int intento = 1; intento <= 10; intento++) {
+            try {
+                skMonitor = new Socket(ipMonitor, puertoMonitor);
+                flujoEntrada = new DataInputStream(skMonitor.getInputStream());
+                flujoSalida = new DataOutputStream(skMonitor.getOutputStream());
+                System.out.println("Conectado al Monitor localmente.");
+                break;
+            } catch (Exception e) {
+                if (intento < 10) {
+                    try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                } else {
+                    System.err.println("No se pudo conectar al Monitor tras 10 intentos.");
+                    System.exit(1);
+                }
+            }
+        }
+
+        try {
             while (true) {
                 String peticionTrama = flujoEntrada.readUTF();
                 String peticion = ProtocoloUtil.desempaquetar(peticionTrama);
-                
+
                 if (peticion.equals("STATUS_CHECK")) {
                     String respuesta = averiaSimulada ? "KO" : "OK";
                     String respuestaTrama = ProtocoloUtil.empaquetar(respuesta);
@@ -133,5 +192,14 @@ public class WM_WS_E {
         } catch (Exception e) {
             System.out.println("Error de conexión con el Monitor: " + e.getMessage());
         }
+    }
+
+    private static void mostrarMenuEstacion(String idWS) {
+        System.out.println("------------------------------------------------------------");
+        System.out.println("  MENÚ INTERACTIVO DE ESTACIÓN [" + idWS + "]");
+        System.out.println("  [ENTER] o '1' : Alternar Simulación de Fuga (KO) / Resolver Avería (OK)");
+        System.out.println("  '2' o 'RIEGO' : Iniciar riego manual desde la propia estación");
+        System.out.println("  '3' o 'PARAR' : Finalizar suministro de riego desde la estación");
+        System.out.println("------------------------------------------------------------");
     }
 }

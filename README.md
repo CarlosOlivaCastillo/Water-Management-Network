@@ -42,31 +42,47 @@ Para compilar las clases del Monitor, Engine y el Protocolo, incluyendo las libr
 
 **(Windows - PowerShell / CMD):**
 ```powershell
-javac -cp ".;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" ProtocoloUtil.java WM_WS_M.java WM_WS_E.java
+javac -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" *.java
 ```
 **(Linux / Mac):**
 ```bash
-javac -cp ".:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" ProtocoloUtil.java WM_WS_M.java WM_WS_E.java
+javac -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" *.java
 ```
 
 ---
 
-## 🚀 Ejecución de los Módulos (Estación de Riego)
+## 🚀 Ejecución de los Módulos
 
 Cada módulo debe ejecutarse en una terminal independiente.
 
-**1. Levantar el Monitor (`WM_WS_M`):**
+**1. Levantar la Central (`WM_Central`):**
+> Sintaxis: `java -cp "..." WM_Central <Puerto_Central> <IP_Kafka> <Puerto_Kafka> [Puerto_Web]`
+```powershell
+java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_Central 8080 localhost 9092
+```
+*🌐 Dashboard Web en tiempo real disponible automáticamente en:* `http://localhost:8081/`
+
+**2. Levantar el Monitor (`WM_WS_M`):**
 > Sintaxis: `java WM_WS_M <Puerto_Escucha_Engine> <IP_Central> <Puerto_Central> <ID_WS>`
 ```powershell
 java WM_WS_M 5000 localhost 8080 WS_01
 ```
 
-**2. Levantar el Engine (`WM_WS_E`):**
+**3. Levantar el Engine (`WM_WS_E`):**
 > Sintaxis: `java -cp "..." WM_WS_E <IP_Kafka> <Puerto_Kafka> <IP_Monitor> <Puerto_Monitor> [ID_WS]`
 ```powershell
 java -cp ".;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_WS_E localhost 9092 localhost 5000 WS_01
 ```
 *Nota: Pulsa `ENTER` en la terminal del Engine en cualquier momento para simular una avería (KO) y comprobar el reporte automático de fugas al Monitor.*
+
+**4. Ejecutar el Field Operator (`WM_FO`):**
+> Sintaxis:
+> - Modo directo: `java -cp "..." WM_FO <IP_Kafka> <Puerto_Kafka> <ID_FO> <ID_WS> <Duracion_Segundos>`
+> - Modo fichero: `java -cp "..." WM_FO <IP_Kafka> <Puerto_Kafka> <ID_FO> <Ruta_Fichero>`
+> - Modo interactivo: `java -cp "..." WM_FO <IP_Kafka> <Puerto_Kafka> <ID_FO>`
+```powershell
+java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_FO localhost 9092 FO_01 WS_01 10
+```
 
 ---
 

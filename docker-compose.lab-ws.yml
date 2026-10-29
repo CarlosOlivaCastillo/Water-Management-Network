@@ -1,0 +1,72 @@
+# ==============================================================================
+# ESCENARIO PC LAB 2: Despliegue de Estaciones de Riego WM_WS (Monitor + Engine)
+# Figura 4 del enunciado: varios WM_WS en un PC de laboratorio conectados al Cloud
+#
+# Uso en PowerShell (apuntando al Cloud en Railway o AWS):
+#   $env:IP_CENTRAL="TU_IP_O_HOST_CENTRAL"; $env:PUERTO_CENTRAL="8080"
+#   $env:IP_KAFKA="TU_IP_O_HOST_KAFKA"; $env:PUERTO_KAFKA="9092"
+#   docker compose -f docker-compose.lab-ws.yml up -d --build
+#
+# Para simular/resolver avería (KO/OK) o activar riego manual en WS_01:
+#   docker attach ws01_engine
+# ==============================================================================
+services:
+  # --- ESTACIÓN WS_01 (Monitor + Engine) ---
+  ws01_monitor:
+    image: wm-monitor:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.monitor
+    container_name: ws01_monitor
+    environment:
+      PUERTO_ENGINE: 5001
+      IP_CENTRAL: ${IP_CENTRAL:-host.docker.internal}
+      PUERTO_CENTRAL: ${PUERTO_CENTRAL:-8080}
+      ID_WS: WS_01
+      UBICACION: "Parque Central - Norte"
+    restart: unless-stopped
+
+  ws01_engine:
+    image: wm-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.engine
+    container_name: ws01_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: ${IP_KAFKA:-host.docker.internal}
+      PUERTO_KAFKA: ${PUERTO_KAFKA:-9092}
+      IP_MONITOR: ws01_monitor
+      PUERTO_MONITOR: 5001
+      ID_WS: WS_01
+    depends_on:
+      - ws01_monitor
+    restart: unless-stopped
+
+  # --- ESTACIÓN WS_02 (Monitor + Engine) ---
+  ws02_monitor:
+    image: wm-monitor:latest
+    container_name: ws02_monitor
+    environment:
+      PUERTO_ENGINE: 5002
+      IP_CENTRAL: ${IP_CENTRAL:-host.docker.internal}
+      PUERTO_CENTRAL: ${PUERTO_CENTRAL:-8080}
+      ID_WS: WS_02
+      UBICACION: "Parque Central - Sur"
+    restart: unless-stopped
+
+  ws02_engine:
+    image: wm-engine:latest
+    container_name: ws02_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: ${IP_KAFKA:-host.docker.internal}
+      PUERTO_KAFKA: ${PUERTO_KAFKA:-9092}
+      IP_MONITOR: ws02_monitor
+      PUERTO_MONITOR: 5002
+      ID_WS: WS_02
+    depends_on:
+      - ws02_monitor
+    restart: unless-stopped

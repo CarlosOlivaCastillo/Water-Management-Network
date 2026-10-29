@@ -21,7 +21,7 @@ COPY --from=builder /app/*.class ./
 
 # Variables de entorno por defecto
 ENV IP_KAFKA=broker \
-    PUERTO_KAFKA=9092 \
+    PUERTO_KAFKA=29092 \
     IP_MONITOR=monitor \
     PUERTO_MONITOR=5000 \
     ID_WS=WS_01

@@ -19,12 +19,13 @@ COPY --from=builder /app/*.class ./
 
 # Variables de entorno por defecto
 ENV PUERTO_ENGINE=5000 \
-    IP_CENTRAL=localhost \
+    IP_CENTRAL=central \
     PUERTO_CENTRAL=8080 \
-    ID_WS=WS_01
+    ID_WS=WS_01 \
+    UBICACION="Sector Municipal"
 
 # Puerto en el que el Monitor escucha al Engine
 EXPOSE 5000
 
 # Ejecutar con paso de parámetros configurables
-ENTRYPOINT ["sh", "-c", "java WM_WS_M ${PUERTO_ENGINE} ${IP_CENTRAL} ${PUERTO_CENTRAL} ${ID_WS}"]
+ENTRYPOINT ["sh", "-c", "java WM_WS_M ${PUERTO_ENGINE} ${IP_CENTRAL} ${PUERTO_CENTRAL} ${ID_WS} \"${UBICACION}\""]

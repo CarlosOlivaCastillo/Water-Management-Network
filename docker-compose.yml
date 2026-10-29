@@ -1,4 +1,7 @@
 services:
+  # ==========================================
+  # BROKER APACHE KAFKA (KRaft mode)
+  # ==========================================
   broker:
     image: apache/kafka:latest
     hostname: broker
@@ -21,3 +24,277 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
       CLUSTER_ID: "gTBb85_WRXu6oQgq-brTQw"
+
+  # ==========================================
+  # CENTRAL DE GESTIÓN (WM_Central + Web Dashboard)
+  # ==========================================
+  central:
+    image: wm-central:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.central
+    container_name: wm_central
+    ports:
+      - "8080:8080" # Sockets TCP para Monitores y Field Operator
+      - "8081:8081" # Dashboard Web interactivo y mapa
+    environment:
+      PUERTO_CENTRAL: 8080
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+    depends_on:
+      - broker
+    restart: unless-stopped
+
+  # ==========================================
+  # ESTACIÓN WS_01: Parque Central - Norte
+  # ==========================================
+  ws01_monitor:
+    image: wm-monitor:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.monitor
+    container_name: ws01_monitor
+    environment:
+      PUERTO_ENGINE: 5001
+      IP_CENTRAL: central
+      PUERTO_CENTRAL: 8080
+      ID_WS: WS_01
+      UBICACION: "Parque Central - Norte"
+    depends_on:
+      - central
+    restart: unless-stopped
+
+  ws01_engine:
+    image: wm-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.engine
+    container_name: ws01_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+      IP_MONITOR: ws01_monitor
+      PUERTO_MONITOR: 5001
+      ID_WS: WS_01
+    depends_on:
+      - broker
+      - ws01_monitor
+    restart: unless-stopped
+
+  # ==========================================
+  # ESTACIÓN WS_02: Parque Central - Sur
+  # ==========================================
+  ws02_monitor:
+    image: wm-monitor:latest
+    container_name: ws02_monitor
+    environment:
+      PUERTO_ENGINE: 5002
+      IP_CENTRAL: central
+      PUERTO_CENTRAL: 8080
+      ID_WS: WS_02
+      UBICACION: "Parque Central - Sur"
+    depends_on:
+      - central
+    restart: unless-stopped
+
+  ws02_engine:
+    image: wm-engine:latest
+    container_name: ws02_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+      IP_MONITOR: ws02_monitor
+      PUERTO_MONITOR: 5002
+      ID_WS: WS_02
+    depends_on:
+      - broker
+      - ws02_monitor
+    restart: unless-stopped
+
+  # ==========================================
+  # ESTACIÓN WS_03: Jardines del Prado
+  # ==========================================
+  ws03_monitor:
+    image: wm-monitor:latest
+    container_name: ws03_monitor
+    environment:
+      PUERTO_ENGINE: 5003
+      IP_CENTRAL: central
+      PUERTO_CENTRAL: 8080
+      ID_WS: WS_03
+      UBICACION: "Jardines del Prado"
+    depends_on:
+      - central
+    restart: unless-stopped
+
+  ws03_engine:
+    image: wm-engine:latest
+    container_name: ws03_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+      IP_MONITOR: ws03_monitor
+      PUERTO_MONITOR: 5003
+      ID_WS: WS_03
+    depends_on:
+      - broker
+      - ws03_monitor
+    restart: unless-stopped
+
+  # ==========================================
+  # ESTACIÓN WS_04: Av. de las Palmeras
+  # ==========================================
+  ws04_monitor:
+    image: wm-monitor:latest
+    container_name: ws04_monitor
+    environment:
+      PUERTO_ENGINE: 5004
+      IP_CENTRAL: central
+      PUERTO_CENTRAL: 8080
+      ID_WS: WS_04
+      UBICACION: "Av. de las Palmeras"
+    depends_on:
+      - central
+    restart: unless-stopped
+
+  ws04_engine:
+    image: wm-engine:latest
+    container_name: ws04_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+      IP_MONITOR: ws04_monitor
+      PUERTO_MONITOR: 5004
+      ID_WS: WS_04
+    depends_on:
+      - broker
+      - ws04_monitor
+    restart: unless-stopped
+
+  # ==========================================
+  # ESTACIÓN WS_05: Plaza Mayor
+  # ==========================================
+  ws05_monitor:
+    image: wm-monitor:latest
+    container_name: ws05_monitor
+    environment:
+      PUERTO_ENGINE: 5005
+      IP_CENTRAL: central
+      PUERTO_CENTRAL: 8080
+      ID_WS: WS_05
+      UBICACION: "Plaza Mayor"
+    depends_on:
+      - central
+    restart: unless-stopped
+
+  ws05_engine:
+    image: wm-engine:latest
+    container_name: ws05_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+      IP_MONITOR: ws05_monitor
+      PUERTO_MONITOR: 5005
+      ID_WS: WS_05
+    depends_on:
+      - broker
+      - ws05_monitor
+    restart: unless-stopped
+
+  # ==========================================
+  # ESTACIÓN WS_06: Parque Fluvial Este
+  # ==========================================
+  ws06_monitor:
+    image: wm-monitor:latest
+    container_name: ws06_monitor
+    environment:
+      PUERTO_ENGINE: 5006
+      IP_CENTRAL: central
+      PUERTO_CENTRAL: 8080
+      ID_WS: WS_06
+      UBICACION: "Parque Fluvial Este"
+    depends_on:
+      - central
+    restart: unless-stopped
+
+  ws06_engine:
+    image: wm-engine:latest
+    container_name: ws06_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+      IP_MONITOR: ws06_monitor
+      PUERTO_MONITOR: 5006
+      ID_WS: WS_06
+    depends_on:
+      - broker
+      - ws06_monitor
+    restart: unless-stopped
+
+  # ==========================================
+  # ESTACIÓN WS_07: Vivero Municipal
+  # ==========================================
+  ws07_monitor:
+    image: wm-monitor:latest
+    container_name: ws07_monitor
+    environment:
+      PUERTO_ENGINE: 5007
+      IP_CENTRAL: central
+      PUERTO_CENTRAL: 8080
+      ID_WS: WS_07
+      UBICACION: "Vivero Municipal"
+    depends_on:
+      - central
+    restart: unless-stopped
+
+  ws07_engine:
+    image: wm-engine:latest
+    container_name: ws07_engine
+    stdin_open: true
+    tty: true
+    environment:
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+      IP_MONITOR: ws07_monitor
+      PUERTO_MONITOR: 5007
+      ID_WS: WS_07
+    depends_on:
+      - broker
+      - ws07_monitor
+    restart: unless-stopped
+
+  # ==========================================
+  # FIELD OPERATOR (Operario de Campo interactivo)
+  # Lanzar con: docker compose run --rm fo
+  # ==========================================
+  fo:
+    image: wm-fo:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.fo
+    container_name: wm_fo
+    stdin_open: true
+    tty: true
+    profiles:
+      - manual
+    environment:
+      IP_KAFKA: broker
+      PUERTO_KAFKA: 29092
+      ID_FO: FO_01
+      IP_CENTRAL: central
+      PUERTO_CENTRAL: 8080
+    depends_on:
+      - central
+      - broker

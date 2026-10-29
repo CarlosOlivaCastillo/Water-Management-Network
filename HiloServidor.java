@@ -1,13 +1,13 @@
 import java.net.Socket;
 import java.io.*;
 
-
 class HiloServidor extends Thread {
     private final Socket skCliente;
     private DataInputStream flujoEntrada;
     private DataOutputStream flujoSalida;
     private GestorCentral gestorCentral;
     private String idWS = null;
+    private boolean esMonitor = false;
 
     public HiloServidor(Socket skCliente) {
         this.skCliente = skCliente;
@@ -21,25 +21,35 @@ class HiloServidor extends Thread {
             gestorCentral = GestorCentral.getInstance();
 
             String tramaRecibida = leerSocket();
-            
 
             while (tramaRecibida != null && !tramaRecibida.equals("exit")) {
                 try {
                     String accion = null;
                     String mensaje = ProtocoloUtil.desempaquetar(tramaRecibida);
-                    if(!mensaje.trim().isEmpty()){
-                        // De esta forma nos aseguramos que si cae el servidor se cierra la conexión
+                    if (!mensaje.trim().isEmpty()) {
                         String[] partes = mensaje.split("#");
                         accion = partes[0].trim();
-                        if(partes.length > 1){
+                        if (partes.length > 1) {
                             idWS = partes[1].trim();
+                        }
+                        if ("REGISTRO".equals(accion) || "FUGA".equals(accion) || "AVERIA".equals(accion) || "FIN_FUGA".equals(accion)) {
+                            esMonitor = true;
                         }
                     }
                     String respuesta = gestorCentral.procesarPeticion(mensaje);
-                    // SI SOLO SE DEVUELVE <ACK> LA FUNCION SPLIT DEJA UNA UNICA PARTE
                     String[] partes = respuesta.split("#");
-                    if(partes.length > 1 && partes[1].trim().equals("R")  && accion.equals("FUGA")){
-                        WM_Central.cortarAguaFuga(idWS);
+                    if ("FUGA".equals(accion) || "AVERIA".equals(accion)) {
+                        if (partes.length > 1 && partes[1].trim().equals("R")) {
+                            String operario = (partes.length > 2) ? partes[2].trim() : null;
+                            WM_Central.cortarAguaFuga(idWS, operario);
+                        } else {
+                            ServidorWebCentral.registrarEvento("¡ALERTA! Fuga reportada en estación " + idWS);
+                        }
+                    } else if ("FIN_FUGA".equals(accion) && idWS != null) {
+                        ServidorWebCentral.registrarEvento("✅ Contingencia resuelta en estación " + idWS + " (Vuelve a DISPONIBLE)");
+                        System.out.println("\n[CENTRAL] Contingencia resuelta en " + idWS + ". Estación disponible nuevamente.");
+                    } else if ("REGISTRO".equals(accion) && idWS != null) {
+                        ServidorWebCentral.registrarEvento("Estación registrada y conectada: " + idWS);
                     }
                     escribirSocket(ProtocoloUtil.empaquetar(partes[0].trim()));
                 } catch (Exception e) {
@@ -49,10 +59,13 @@ class HiloServidor extends Thread {
                 tramaRecibida = leerSocket();
             }
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             System.out.println("Error en el hilo del servidor: " + e.getMessage());
         } finally {
-            gestorCentral.actualizarEstado(idWS, "DESCONECTADA");
+            if (esMonitor && idWS != null) {
+                gestorCentral.actualizarEstado(idWS, "DESCONECTADA");
+                ServidorWebCentral.registrarEvento("Estación desconectada: " + idWS);
+            }
             cerrarConexion();
         }
     }
@@ -62,7 +75,7 @@ class HiloServidor extends Thread {
         try {
             mensaje = flujoEntrada.readUTF();
         } catch (IOException e) {
-            System.out.println("Error al leer del socket: " + e.getMessage());
+            // Fin de stream o desconexión del cliente
         }
         return mensaje;
     }
@@ -75,16 +88,13 @@ class HiloServidor extends Thread {
         }
     }
 
-
     private void cerrarConexion() {
         try {
             if (flujoEntrada != null) flujoEntrada.close();
             if (flujoSalida != null) flujoSalida.close();
-            if (skCliente != null) skCliente.close();
+            if (skCliente != null && !skCliente.isClosed()) skCliente.close();
         } catch (IOException e) {
             System.out.println("Error al cerrar la conexión: " + e.getMessage());
         }
     }
 }
-
-
