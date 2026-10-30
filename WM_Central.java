@@ -319,6 +319,8 @@ public class WM_Central {
 
                     if (duracion > 0) {
                         tiempoRiego(idWS, idFO, duracion);
+                    }else if(duracion == 0){
+                        espera(idFO);
                     }
                 } else {
                     System.out.println("\n[CENTRAL] Riego rechazado para " + idWS + " (solicitado por " + idFO + ")");
