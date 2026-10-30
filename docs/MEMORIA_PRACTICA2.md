@@ -1,252 +1,231 @@
-# Memoria de Prácticas - Sistemas Distribuidos (Curso 2026/2027)
+# Memoria Práctica 2 – Sistemas Distribuidos (Curso 2026/2027)
+## Water Management Network (Release 1)
 
----
+**Autores:**
+* Carlos Oliva Castillo (`50384072L`)
+* Nael Alba (`48804733K`)
 
-## Portada
-
-* **Título de la Práctica:** Práctica 2 (Release 1) – *Water Management Network: Sockets, Streaming de Eventos, Colas y Modularidad*
-* **Asignatura:** Sistemas Distribuidos (Grado en Ingeniería Informática - Universidad de Alicante)
-* **Curso Académico:** 2026 / 2027
-* **Integrantes del Grupo:**
-  * **Estudiante 1:** Carlos Oliva Castillo — **DNI:** `50384072L`
-  * **Estudiante 2:** Nael Alba — **DNI:** `48804733K`
-* **Repositorio Oficial en GitHub:** `https://github.com/CarlosOlivaCastillo/Water-Management-Network`
-* **Imágenes en Docker Hub (CI/CD):** `carlosolivaa/practica-aws:latest` y `carlosolivaa/wm-central:latest`
+**Repositorio GitHub:** https://github.com/CarlosOlivaCastillo/Water-Management-Network  
+**Imágenes Docker Hub:** `carlosolivaa/practica-aws:latest` y `carlosolivaa/wm-central:latest`
 
 ---
 
 ## Índice
 
-1. [Resumen Ejecutivo y Arquitectura del Sistema](#1-resumen-ejecutivo-y-arquitectura-del-sistema)
-2. [Descripción Detallada de los Componentes Software Desarrollados](#2-descripción-detallada-de-los-componentes-software-desarrollados)
-   * 2.1. `ProtocoloUtil.java` (Empaquetado `<STX><DATA><ETX><LRC>`)
-   * 2.2. `WM_Central.java` (Gobierno Central, Sockets y Eventos Kafka)
-   * 2.3. `GestorCentral.java` (Patrón Singleton y Persistencia SQLite)
-   * 2.4. `HiloServidor.java` (Atención Concurrente a Monitores TCP)
-   * 2.5. `ServidorWebCentral.java` (Dashboard Web en Tiempo Real y API REST)
-   * 2.6. `WM_WS_M.java` (Monitor de Estación de Riego)
-   * 2.7. `WM_WS_E.java` (Engine de Estación de Riego: Electroválvula y Caudalímetro)
-   * 2.8. `WM_FO.java` (Aplicación de Operarios de Campo - Field Operators)
-3. [Protocolos de Comunicación y Diseño de Mensajería](#3-protocolos-de-comunicación-y-diseño-de-mensajería)
-4. [Guía Paso a Paso de Despliegue (Cloud AWS + Laboratorio Docker)](#4-guía-paso-a-paso-de-despliegue-cloud-aws--laboratorio-docker)
-5. [Guion y Capturas de Pantalla del Funcionamiento](#5-guion-y-capturas-de-pantalla-del-funcionamiento)
+1. Introducción y arquitectura general
+2. Explicación de los módulos implementados
+3. Formato de los mensajes (Sockets y Kafka)
+4. Puesta en marcha y despliegue (AWS Cloud y ordenadores del laboratorio)
+5. Pruebas realizadas y capturas de funcionamiento
 
 ---
 
-## 1. Resumen Ejecutivo y Arquitectura del Sistema
+## 1. Introducción y arquitectura general
 
-**Water Management Network** es un sistema distribuido en tiempo real diseñado para la supervisión y gestión centralizada de la red de estaciones de riego (*Watering Stations* - `WS`) distribuidas por los parques y jardines de una ciudad.
+En esta práctica hemos implementado el sistema distribuido **Water Management Network**, cuyo objetivo es gestionar desde una central el riego de distintas estaciones repartidas por los parques de una ciudad, controlando tanto las órdenes de los operarios de campo como las posibles fugas o averías en tiempo real.
 
-La arquitectura combina de manera híbrida dos paradigmas de comunicación fundamentales en sistemas distribuidos:
-1. **Comunicación Síncrona orientada a conexión mediante Sockets TCP (`java.net.ServerSocket` / `Socket`)**: Utilizada para tareas críticas de control de salud (*heartbeat* cada segundo entre Monitor y Engine), autenticación/registro inicial de estaciones ante la Central y notificación inmediata de averías/fugas (`FUGA`) y su resolución (`FIN_FUGA`), garantizando la integridad de cada trama mediante empaquetado `<STX><DATA><ETX><LRC>`.
-2. **Comunicación Asíncrona basada en Eventos y Colas mediante Apache Kafka**: Empleada para desacoplar las solicitudes de los operarios de campo (`WM_FO`), la emisión de órdenes de apertura/cierre de electroválvulas (`ordenes-riego`) y el *streaming* continuo de telemetría de consumo de agua cada segundo (`telemetria-estaciones`).
+Para cumplir con lo que pide el enunciado, el sistema utiliza dos formas de comunicación distintas según el tipo de mensaje:
 
-```
-+-----------------------------------------------------------------------------------+
-|                                CLOUD HOSTING (AWS EC2)                            |
-|                                                                                   |
-|  +-----------------------+       JDBC        +---------------------------------+  |
-|  |   SQLite Database     | <---------------> |           WM_Central            |  |
-|  | (watermanagement.db)  |                   |  - GestorCentral (Singleton)    |  |
-|  | - Tabla: estaciones   |                   |  - HiloServidor (1..N clientes) |  |
-|  | - Tabla: operarios    |                   |  - ServidorWebCentral (:8081)   |  |
-|  +-----------------------+                   +--------+---------------+--------+  |
-|                                                       |               ^           |
-|                                                       | Kafka         | Sockets   |
-|                                                       v               | TCP :8080 |
-|                                              +--------+---------------+--------+  |
-|                                              |     Apache Kafka Broker (:9092) |  |
-|                                              |  - peticiones_riego             |  |
-|                                              |  - respuestas_riego             |  |
-|                                              |  - ordenes-riego                |  |
-|                                              |  - telemetria-estaciones        |  |
-|                                              +--------+---------------+--------+  |
-+-------------------------------------------------------|---------------|-----------+
-                                                        |               |
-                     +----------------------------------+               |
-                     | Kafka (:9092)                                    | Sockets TCP (:8080)
-                     v                                                  | y Kafka (:9092)
-+--------------------+--------------------+       +---------------------+--------------------+
-|               PC LAB 1                  |       |                 PC LAB 2                 |
-|                                         |       |                                          |
-|  +-----------------------------------+  |       |  +------------------------------------+  |
-|  |       WM_FO (1) - Operario FO_01  |  |       |  |     Watering Station 1 (WS_01)     |  |
-|  |  - Modo Interactivo / Lotes (.txt)|  |       |  |  +--------------+  Sockets  +----+ |  |
-|  +-----------------------------------+  |       |  |  | WM_WS_M (:5001) <------> | E  | |  |
-|  +-----------------------------------+  |       |  |  +--------------+   1 seg   +----+ |  |
-|  |       WM_FO (2) - Operario FO_02  |  |       |  +------------------------------------+  |
-|  |  - Espera de 4s entre servicios   |  |       |  |     Watering Station 2 (WS_02)     |  |
-|  +-----------------------------------+  |       |  +------------------------------------+  |
-+-----------------------------------------+       +------------------------------------------+
+* **Sockets TCP (`ServerSocket` y `Socket`)**: Se usan para la comunicación directa entre el Engine y el Monitor de cada estación (comprobando cada segundo que no haya fugas) y entre el Monitor y la Central (para registrar la estación al arrancar y para avisar inmediatamente si se produce una avería o si ya se ha solucionado). Todos los mensajes por sockets van empaquetados con el formato `<STX><DATA><ETX><LRC>` para comprobar que no llegan corruptos.
+* **Colas de mensajes con Apache Kafka**: Se usan para toda la parte de órdenes de riego y envío de telemetría. De esta forma, los operarios (`WM_FO`) mandan sus peticiones a Central por Kafka, Central manda la orden de abrir o cerrar el grifo al Engine (`WM_WS_E`), y el Engine va publicando cada segundo los litros consumidos mientras está regando.
+
+El esquema general del despliegue que hemos montado es el siguiente:
+
+```text
++-------------------------------------------------------------------------+
+|                        ENTORNO CLOUD (AWS EC2)                          |
+|                                                                         |
+|   +-----------------------+          +------------------------------+   |
+|   | Base de Datos SQLite  | <------> |         WM_Central           |   |
+|   | (watermanagement.db)  |          | - Servidor Sockets (:8080)   |   |
+|   | - Tabla estaciones    |          | - Panel Web (:8081)          |   |
+|   | - Tabla operarios     |          +--------------+---------------+   |
+|   +-----------------------+                         |                   |
+|                                                     v                   |
+|                                      +--------------+---------------+   |
+|                                      |  Broker Apache Kafka (:9092) |   |
+|                                      +--------------+---------------+   |
++-----------------------------------------------------|-------------------+
+                                                      |
+                  +-----------------------------------+-------------------+
+                  |                                                       |
+                  v (Kafka :9092)                                         v (Sockets :8080 y Kafka :9092)
++-----------------+--------------------+                +-----------------+--------------------+
+|        ORDENADOR LAB 1 (FO)          |                |        ORDENADOR LAB 2 (WS)          |
+|                                      |                |                                      |
+|  - Operario WM_FO 1 (FO_01)          |                |  - Estación WS_01 (Monitor + Engine) |
+|  - Operario WM_FO 2 (FO_02)          |                |  - Estación WS_02 (Monitor + Engine) |
++--------------------------------------+                +--------------------------------------+
 ```
 
 ---
 
-## 2. Descripción Detallada de los Componentes Software Desarrollados
+## 2. Explicación de los módulos implementados
 
-### 2.1. `ProtocoloUtil.java` (Empaquetado y Verificación de Integridad `<STX><DATA><ETX><LRC>`)
-Clase de utilidad transversal encargada de encapsular y validar las tramas transmitidas por Sockets TCP entre `WM_WS_E`, `WM_WS_M` y `WM_Central`:
-* **`empaquetar(String mensaje)`**: Calcula el byte de redundancia longitudinal (`LRC`) aplicando la operación lógica `XOR` carácter a carácter sobre el cuerpo del mensaje, devolviendo la secuencia `<STX (0x02)><MENSAJE><ETX (0x03)><LRC>`.
-* **`desempaquetar(String trama)`**: Verifica la presencia de los delimitadores `STX` y `ETX`, extrae la carga útil y recalcula el `LRC`. Si difiere del recibido, lanza una excepción que provoca el envío inmediato de `<NACK>`.
+Hemos separado el código en 8 clases dentro del proyecto para que cada parte tenga su responsabilidad clara:
 
-### 2.2. `WM_Central.java` (Módulo Central de Gobierno)
-Aplicación principal del *Core System*. Recibe por línea de comandos:
+### 2.1. `ProtocoloUtil.java`
+Es una clase auxiliar que utilizan todos los programas que hablan por sockets (`WM_WS_E`, `WM_WS_M` y `HiloServidor`). Tiene dos métodos principales:
+* `empaquetar(String mensaje)`: Recorre los caracteres del texto haciendo un `XOR` para calcular el carácter de control `LRC` y devuelve el string con `STX` (`0x02`) delante, `ETX` (`0x03`) detrás y el `LRC` al final.
+* `desempaquetar(String trama)`: Comprueba que el mensaje tenga el formato correcto, extrae el texto y vuelve a calcular el `LRC`. Si no coincide, lanza una excepción para responder `<NACK>`.
+
+### 2.2. `WM_Central.java`
+Es el servidor principal. Al arrancar recibe el puerto de escucha de sockets, la IP y puerto de Kafka y (opcionalmente) el puerto de la web:
 `java WM_Central <puerto_central> <ip_kafka> <puerto_kafka> [puerto_web]`
-* Inicializa la base de datos SQLite poniendo todas las estaciones registradas en estado `DESCONECTADA` hasta que sus respectivos monitores conecten.
-* Levanta el `ServerSocket` multihilo en el puerto `8080` creando una instancia de `HiloServidor` por cada estación que se conecta.
-* Gestiona un `KafkaProducer` y dos `KafkaConsumer` concurrentes:
-  * Consumidor del topic `peticiones_riego`: valida disponibilidad y operario en BD, publica `INICIAR_RIEGO#<idWS>` en `ordenes-riego`, notifica `ACK#<idWS>` o `NACK#<idWS>` al operario en `respuestas_riego` y programa un temporizador en un `ScheduledExecutorService` para cortar el suministro automáticamente al cumplirse el tiempo establecido y enviar el resumen `FIN_RIEGO#<idWS>#<litros>`.
-  * Consumidor del topic `telemetria-estaciones`: actualiza en tiempo real el caudal y el volumen acumulado tanto en consola como en el Dashboard Web.
-* Ofrece control arbitrario (Punto 11 de la mecánica) tanto por consola interactiva como desde el Dashboard Web para **Iniciar un riego**, **Bloquear una WS (`FUERA_DE_SERVICIO`)** y **Activar una WS (`DISPONIBLE`)**.
 
-### 2.3. `GestorCentral.java` (Singleton y Acceso a Datos SQLite)
-Implementa el patrón de diseño **Singleton** con métodos `synchronized` para garantizar la seguridad ante accesos concurrentes (*thread-safety*) desde múltiples hilos de sockets y consumidores Kafka sobre la base de datos `watermanagement.db` (SQLite):
-* **Tabla `estaciones`**: Almacena `idWS`, `ubicacion`, `estado` (`DISPONIBLE`, `REGANDO`, `FUGA`, `FUERA_DE_SERVICIO`, `DESCONECTADA`), `idFO`, `duracion` y `fecha_inicio`. Precarga las 7 estaciones oficiales de la red municipal (`WS_01` a `WS_07`).
-* **Tabla `operarios`**: Almacena los identificadores dados de alta en Central (`FO_01`, `FO_02`, `FO_03`, `CENTRAL`, `WEB_PANEL`) validados mediante `validarOperario(idFO)`.
+Lo que hace al iniciarse es:
+1. Inicializar la base de datos SQLite poniendo todas las estaciones en estado `DESCONECTADA` hasta que sus monitores se vayan conectando.
+2. Arrancar el servidor web en el puerto `8081` y la consola de comandos para poder controlar las estaciones manualmente desde Central (`BLOQUEAR`, `ACTIVAR`, `REGAR`, `PARAR`).
+3. Abrir el `ServerSocket` en el puerto `8080`. Por cada Monitor que se conecta, lanza un hilo `HiloServidor`.
+4. Arrancar un productor y dos consumidores de Kafka:
+   * Uno escucha el topic `peticiones_riego` (donde escriben los operarios `WM_FO`). Cuando llega un `START_RIEGO`, comprueba en la BD que el operario exista y que la estación esté `DISPONIBLE`. Si todo está bien, envía `INICIAR_RIEGO` al Engine, responde `ACK` al operario y, si el riego tiene duración limitada, programa una tarea con `ScheduledExecutorService` para cortar el agua automáticamente al terminar los segundos indicados.
+   * Si un operario envía un lote de órdenes desde un fichero (separadas por `;`), Central las guarda en una cola por operario (`colasFO`) y conforme termina una orden espera 4 segundos (`espera(idFO)`) antes de ejecutar la siguiente.
+   * El segundo consumidor escucha `telemetria-estaciones` para ir guardando y mostrando el caudal y el volumen acumulado en tiempo real.
 
-### 2.4. `HiloServidor.java` (Gestión Concurrente de Conexiones de Monitores)
-Hilo dedicado a cada conexión entrante en el servidor de sockets de Central:
-* Desempaqueta las tramas `<STX><DATA><ETX><LRC>` y delega la operación en `GestorCentral.procesarPeticion(...)`.
-* Si recibe `FUGA#<idWS>` mientras la estación se encontraba en estado `REGANDO` (indicado por el sufijo `#R`), invoca `WM_Central.cortarAguaFuga(idWS)`, cerrando de inmediato la electroválvula por Kafka, cancelando el temporizador activo y alertando al operario (`FUGA#<idWS>`).
-* Si recibe `FIN_FUGA#<idWS>`, restaura la estación al estado `DISPONIBLE`.
-* En su bloque `finally`, si el socket del Monitor se cierra o cae la red, actualiza automáticamente el estado de esa estación a `DESCONECTADA`.
+### 2.3. `GestorCentral.java`
+Gestiona toda la conexión con la base de datos SQLite (`db/watermanagement.db`). Hemos usado el patrón Singleton y métodos `synchronized` porque a la base de datos acceden a la vez varios hilos de sockets y los hilos de Kafka.
+* Crea dos tablas si no existen: `estaciones` (con `idWS`, `ubicacion`, `estado`, `idFO`, `duracion` y `fecha_inicio`) y `operarios` (con los operarios dados de alta como `FO_01`, `FO_02`, `FO_03`, `CENTRAL` y `WEB_PANEL`).
+* Tiene los métodos para registrar estaciones, autorizar o finalizar riegos, bloquear/activar estaciones y consultar el listado completo para enviárselo a los operarios o al panel web.
 
-### 2.5. `ServidorWebCentral.java` (Cuadro de Mandos Web en Tiempo Real)
-Servidor HTTP embebido (`com.sun.net.httpserver.HttpServer`) que escucha en el puerto `8081` y sirve el panel de monitorización visual junto con una API REST JSON (`/api/estaciones`, `/api/telemetria`, `/api/logs`, `/api/riego`, `/api/estado`, `/api/emergencia`).
-Cumple estrictamente los colores oficiales del enunciado (página 4):
-* **Disponible (`DISPONIBLE`)**: Fondo **VERDE**.
-* **Regando (`REGANDO`)**: Fondo **VERDE PARPADEANDO** mostrando en tiempo real el caudal en L/min, el volumen acumulado en litros y el ID del operario que activó el riego.
-* **Fuga (`FUGA`)**: Fondo **ROJO**.
-* **Fuera de Servicio (`FUERA_DE_SERVICIO`)**: Fondo **NARANJA** con la leyenda *"Fuera de Servicio"*.
-* **Desconectada (`DESCONECTADA`)**: Fondo **GRIS**.
+### 2.4. `HiloServidor.java`
+Atiende la conexión TCP de un Monitor (`WM_WS_M`) concreto:
+* Cuando recibe `REGISTRO#<idWS>#<ubicacion>`, da de alta la estación en la base de datos y la pasa a `DISPONIBLE`.
+* Cuando recibe `FUGA#<idWS>`, pasa la estación a estado `FUGA`. Si en ese momento estaba `REGANDO`, llama a `WM_Central.cortarAguaFuga(...)` para mandar inmediatamente `PARAR_RIEGO` por Kafka al Engine, cancelar el temporizador y avisar al operario que tenía el riego activo.
+* Cuando recibe `FIN_FUGA#<idWS>`, vuelve a poner la estación en `DISPONIBLE`.
+* En el bloque `finally`, si el Monitor se cierra o se pierde la conexión de red, actualiza el estado de esa estación a `DESCONECTADA`.
 
-### 2.6. `WM_WS_M.java` (Monitor de la Estación de Riego)
-Recibe por línea de parámetros:
-`java WM_WS_M <Puerto_Escucha_Engine> <IP_Central> <Puerto_Central> <ID_WS> [Ubicacion]`
-* Al arrancar se conecta por Sockets TCP a `WM_Central` (con política de reintentos para resiliencia) y envía la trama `REGISTRO#<idWS>#<ubicacion>`.
-* Abre un `ServerSocket` local donde acepta la conexión de su `WM_WS_E` y ejecuta un bucle de comprobación de salud cada **1 segundo** enviando `STATUS_CHECK`.
-* Si recibe `KO` o pierde la conexión con el Engine, envía inmediatamente `FUGA#<idWS>` a Central. Cuando la contingencia se resuelve en el Engine y vuelve a recibir `OK`, envía `FIN_FUGA#<idWS>` a Central para devolver la estación a `DISPONIBLE`.
+### 2.5. `ServidorWebCentral.java`
+Para poder ver el mapa de estaciones y los colores que pide el enunciado sin complicar la instalación, hemos usado el servidor HTTP incluido en Java (`com.sun.net.httpserver.HttpServer`) en el puerto `8081`.
+Muestra las 7 estaciones con los colores indicados en el guion:
+* **Verde (`DISPONIBLE`)**: Estación conectada y lista para regar.
+* **Verde parpadeando (`REGANDO`)**: Muestra el operario que la ha activado, el caudal actual y los litros acumulados.
+* **Rojo (`FUGA`)**: Avería detectada por el Monitor.
+* **Naranja (`FUERA DE SERVICIO`)**: Estación bloqueada manualmente desde Central.
+* **Gris (`DESCONECTADA`)**: El Monitor aún no se ha conectado o se ha caído.
 
-### 2.7. `WM_WS_E.java` (Engine de la Estación de Riego)
-Recibe por línea de parámetros:
+Además, desde las tarjetas de la web también se pueden probar las acciones de Central (iniciar riego, bloquear a fuera de servicio, activar o resolver avería).
+
+### 2.6. `WM_WS_M.java` (Monitor de la estación)
+Se lanza indicando el puerto local para su Engine, la IP/puerto de Central y el ID de la estación:
+`java WM_WS_M <Puerto_Engine> <IP_Central> <Puerto_Central> <ID_WS> [Ubicacion]`
+1. Primero se conecta por socket a `WM_Central` (hace hasta 5 intentos por si Central tarda un poco más en levantar) y se registra enviando `REGISTRO#<idWS>#<ubicacion>`.
+2. Después abre su `ServerSocket` local dentro de un bucle `while (true)` esperando a que se conecte su `WM_WS_E`.
+3. Una vez conectado el Engine, le envía cada segundo un `STATUS_CHECK`. Si el Engine responde `KO` o se cierra la conexión con el Engine, el Monitor envía `FUGA#<idWS>` a Central, pero el Monitor se queda abierto esperando a que el Engine vuelva a conectarse o responda `OK` (momento en el que envía `FIN_FUGA#<idWS>`).
+
+### 2.7. `WM_WS_E.java` (Engine de la estación)
+Simula la electroválvula y el caudalímetro de la estación:
 `java WM_WS_E <IP_Kafka> <Puerto_Kafka> <IP_Monitor> <Puerto_Monitor> [ID_WS]`
-* Se suscribe al topic de Kafka `ordenes-riego` filtrando los mensajes dirigidos a su `ID_WS` (o `ALL`) para abrir (`INICIAR_RIEGO`) o cerrar (`PARAR_RIEGO`) la electroválvula.
-* Mientras `regando == true`, su hilo productor envía cada **1 segundo** al topic `telemetria-estaciones` la trama `TELEMETRIA#<idWS>#<caudal>#<volumenAcumulado>#<timestamp>`.
-* Incluye un hilo interactivo de teclado que permite:
-  1. Pulsar `ENTER` (o `1`) para simular una fuga (`KO`) en tiempo de ejecución o volver a pulsar `ENTER` para resolver la avería (`OK`).
-  2. Iniciar (`2` / `RIEGO`) o detener (`3` / `PARAR`) el suministro manualmente desde la propia estación.
+1. Se conecta por socket a su Monitor local para responder `OK` o `KO` a cada `STATUS_CHECK`.
+2. Escucha el topic `ordenes-riego` de Kafka. Cuando recibe `INICIAR_RIEGO#<idWS>`, pone `regando = true` y su hilo productor empieza a enviar cada segundo al topic `telemetria-estaciones` el caudal y los litros acumulados. Cuando recibe `PARAR_RIEGO#<idWS>`, cierra la válvula y deja de mandar telemetría.
+3. Tiene un hilo de lectura por teclado para las pruebas en laboratorio: pulsando `ENTER` (o `1`) se simula una fuga (`KO`) y volviendo a pulsar `ENTER` se arregla la fuga (`OK`). También permite iniciar (`2`) o parar (`3`) el riego desde la propia estación.
 
-### 2.8. `WM_FO.java` (Aplicación de Operarios de Campo - Field Operators)
-Recibe por línea de parámetros:
+### 2.8. `WM_FO.java` (Operario de campo)
+Es la aplicación de consola para los operarios. Se conecta únicamente por Kafka:
 `java WM_FO <IP_Kafka> <Puerto_Kafka> <ID_FO> [Ruta_Fichero | <ID_WS> <Duracion>]`
-* Envía peticiones `START_RIEGO#<idWS>#<idFO>#<duracion>` y `STOP_RIEGO#<idWS>#<idFO>` al topic `peticiones_riego` de Kafka.
-* Escucha de forma asíncrona en el topic `respuestas_riego` filtrando por clave `idFO` para mostrar en pantalla la autorización (`ACK`), denegación (`NACK`), corte por avería (`FUGA`) o el resumen final del riego con los litros consumidos (`FIN_RIEGO#<idWS>#<litros>`).
-* Al procesar un fichero de servicios por lotes (`tareas.txt`), agrupa las órdenes separadas por `;` y las envía a `WM_Central`, quien las encola por operario (`colasFO`), ejecuta cada servicio hasta su conclusión (en éxito, denegación o corte por fuga) y **espera reglamentariamente 4 segundos** (`espera(idFO)`) antes de despachar el siguiente servicio de la cola.
+* Al arrancar en modo interactivo, envía automáticamente `LISTAR#<idFO>` a Central para mostrar en pantalla la tabla de estaciones y cuáles están `DISPONIBLE` (también se puede consultar en cualquier momento escribiendo `LISTAR` o `DISPONIBLES`).
+* Permite pedir riegos con duración (`WS_01#10`), riegos indefinidos (`WS_01`), parar un riego en curso (`STOP#WS_01`) o cargar un fichero de tareas (`FILE#tareas.txt`).
+* Su hilo consumidor escucha `respuestas_riego` filtrando por el `idFO` del operario para mostrar si el riego ha sido autorizado (`ACK`), denegado (`NACK`), cancelado por avería (`FUGA`) o ha terminado normalmente indicando los litros totales gastados (`FIN_RIEGO`).
 
 ---
 
-## 3. Protocolos de Comunicación y Diseño de Mensajería
+## 3. Formato de los mensajes (Sockets y Kafka)
 
-### 3.1. Tramas Síncronas por Sockets TCP (`<STX><DATA><ETX><LRC>`)
+### 3.1. Mensajes por Sockets TCP (todos encapsulados con `<STX><DATA><ETX><LRC>`)
 
-| Origen -> Destino | Mensaje (`<DATA>`) | Respuesta | Descripción |
+| Quién envía | Quién recibe | Contenido (`<DATA>`) | Respuesta | Qué hace |
+| :--- | :--- | :--- | :--- | :--- |
+| `WM_WS_M` | `WM_Central` | `REGISTRO#WS_01#Ubicacion` | `<ACK>` / `<NACK>` | Registra la estación al conectarse y la pone en `DISPONIBLE`. |
+| `WM_WS_M` | `WM_Central` | `FUGA#WS_01` | `<ACK>` / `<NACK>` | Avisa de fuga en el Engine. Pasa a `FUGA` y corta el riego si estaba activo. |
+| `WM_WS_M` | `WM_Central` | `FIN_FUGA#WS_01` | `<ACK>` / `<NACK>` | Avisa de que el Engine vuelve a dar `OK`. Pasa a `DISPONIBLE`. |
+| `WM_WS_M` | `WM_WS_E` | `STATUS_CHECK` | `OK` / `KO` | Comprobación cada 1 segundo del estado del Engine. |
+
+### 3.2. Topics y mensajes en Apache Kafka
+
+| Topic | Productor | Consumidor | Formato del mensaje |
 | :--- | :--- | :--- | :--- |
-| `WM_WS_M` -> `WM_Central` | `REGISTRO#<idWS>#<ubicacion>` | `<ACK>` / `<NACK>` | Alta y conexión de la estación (`DISPONIBLE`). |
-| `WM_WS_M` -> `WM_Central` | `FUGA#<idWS>` | `<ACK>` / `<NACK>` | Notificación inmediata de fuga (`FUGA`) y corte de riego si estaba activo. |
-| `WM_WS_M` -> `WM_Central` | `FIN_FUGA#<idWS>` | `<ACK>` / `<NACK>` | Contingencia resuelta; la estación vuelve a `DISPONIBLE`. |
-| `WM_WS_M` -> `WM_WS_E` | `STATUS_CHECK` | `OK` / `KO` | Comprobación de salud (*heartbeat*) cada 1 segundo. |
-
-### 3.2. Eventos Asíncronos en Apache Kafka
-
-| Topic de Kafka | Productor | Consumidor | Formato del Mensaje (`Value`) |
-| :--- | :--- | :--- | :--- |
-| `peticiones_riego` | `WM_FO`, `WM_WS_E` | `WM_Central` | `START_RIEGO#<idWS>#<idFO>#<duracion>` \| `STOP_RIEGO#<idWS>#<idFO>` |
-| `respuestas_riego` | `WM_Central` | `WM_FO` | `ACK#<idWS>` \| `NACK#<idWS>` \| `FUGA#<idWS>` \| `FIN_RIEGO#<idWS>#<litros>` |
+| `peticiones_riego` | `WM_FO`, `WM_WS_E` | `WM_Central` | `START_RIEGO#<idWS>#<idFO>#<dur>` \| `STOP_RIEGO#<idWS>#<idFO>` \| `LISTAR#<idFO>` |
+| `respuestas_riego` | `WM_Central` | `WM_FO` | `ACK#<idWS>` \| `NACK#<idWS>` \| `FUGA#<idWS>` \| `FIN_RIEGO#<idWS>#<litros>` \| `LISTA#<datos>` |
 | `ordenes-riego` | `WM_Central` | `WM_WS_E` | `INICIAR_RIEGO#<idWS>` \| `PARAR_RIEGO#<idWS>` \| `PARAR_RIEGO#ALL` |
 | `telemetria-estaciones` | `WM_WS_E` | `WM_Central` | `TELEMETRIA#<idWS>#<caudal>#<volumenAcumulado>#<timestamp>` |
 
 ---
 
-## 4. Guía Paso a Paso de Despliegue (Cloud AWS + Laboratorio Docker)
+## 4. Puesta en marcha y despliegue (AWS Cloud y ordenadores del laboratorio)
 
-Esta es la guía exacta utilizada para desplegar el escenario físico distribuido (Figura 4 del enunciado):
+### 4.1. Integración Continua (GitHub Actions -> Docker Hub)
+Hemos configurado el fichero `.github/workflows/deploy.yml` para que cada vez que hacemos `push` a las ramas `main` o `develop`, GitHub Actions compile el `Dockerfile` de la Central y suba la imagen actualizada a nuestra cuenta de Docker Hub (`carlosolivaa/practica-aws:latest`).
 
-### Paso 1: Tubería CI/CD Automática (VS Code -> GitHub Actions -> Docker Hub)
-1. Cada `git push` a la rama `main` o `develop` dispara el workflow `.github/workflows/deploy.yml`.
-2. GitHub Actions compila la imagen multi-etapa definida en el `Dockerfile` raíz y la publica automáticamente en Docker Hub bajo `carlosolivaa/practica-aws:latest` y `carlosolivaa/wm-central:latest`.
+### 4.2. Despliegue de Central y Kafka en AWS EC2
+Siguiendo el tutorial de AWS Academy Learner Lab:
+1. Creamos una instancia EC2 con **Ubuntu 24.04 (`t3.micro`)** en la región `us-east-1` usando el par de claves `vockey` (`labsuser.pem`).
+2. En el Security Group abrimos los puertos **22** (SSH), **9092** (Kafka), **8080** (Sockets Central) y **8081** (Panel Web).
+3. *Problema encontrado en AWS y solución:* Al probar Kafka en la instancia `t3.micro` (que solo tiene 1 GB de RAM), el contenedor de Kafka se cerraba al arrancar por falta de memoria (`Cannot allocate memory`). Lo solucionamos añadiendo un fichero de intercambio (`/swapfile`) de 2 GB en Ubuntu y limitando el heap de Kafka con `-e KAFKA_HEAP_OPTS="-Xmx350M -Xms350M"`.
+4. Además, dejamos configurado un servicio en `/etc/systemd/system/wm-auto.service` que ejecuta `/usr/local/bin/start-wm.sh` al encender la instancia, de modo que detecta sola la IP pública del día (`curl -s http://checkip.amazonaws.com`) y levanta los contenedores `kafka` y `wm_central` automáticamente.
 
-### Paso 2: Despliegue del Entorno Cloud en AWS EC2 (`WM_Central` + `SQLite` + `Kafka`)
-1. En **AWS Academy Learner Lab** (`us-east-1`), lanzar una instancia **EC2 Ubuntu (`t3.micro`)** con el par de claves `vockey` y el grupo de seguridad `default` con los puertos de entrada **22 (SSH)**, **9092 (Kafka)**, **8080 (Sockets Central)** y **8081 (Dashboard Web)** abiertos a `0.0.0.0/0`.
-2. Conectarse por SSH a la instancia EC2 y ejecutar los contenedores Cloud:
-   ```bash
-   sudo apt-get update -y && sudo apt-get install -y docker.io
-   sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-   PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+Comandos ejecutados en la instancia de AWS:
+```bash
+PUBLIC_IP=$(curl -s http://checkip.amazonaws.com | tr -d '[:space:]')
+sudo docker rm -f kafka wm_central 2>/dev/null || true
+sudo docker pull carlosolivaa/practica-aws:latest
 
-   # 1. Levantar Broker Apache Kafka anunciando la IP pública de AWS
-   sudo docker run -d --name kafka --restart unless-stopped -p 9092:9092 \
-     -e KAFKA_HEAP_OPTS="-Xmx350M -Xms350M" \
-     -e KAFKA_CFG_NODE_ID=0 \
-     -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
-     -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
-     -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
-     -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@localhost:9093 \
-     -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
-     -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://$PUBLIC_IP:9092 \
-     bitnamilegacy/kafka:3.7.0
+sudo docker run -d --name kafka --restart unless-stopped -p 9092:9092 \
+  -e KAFKA_HEAP_OPTS="-Xmx350M -Xms350M" \
+  -e KAFKA_CFG_NODE_ID=0 \
+  -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
+  -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+  -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+  -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@localhost:9093 \
+  -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+  -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://$PUBLIC_IP:9092 \
+  bitnamilegacy/kafka:3.7.0
 
-   # 2. Levantar WM_Central + SQLite + Dashboard Web desde Docker Hub
-   sudo docker run -d --name wm_central --restart unless-stopped -p 8080:8080 -p 8081:8081 \
-     -e PUERTO_CENTRAL=8080 \
-     -e IP_KAFKA=$PUBLIC_IP \
-     -e PUERTO_KAFKA=9092 \
-     -e PORT=8081 \
-     carlosolivaa/practica-aws:latest
-   ```
-3. Verificar el **Dashboard Web en la nube**: `http://<IP_PUBLICA_AWS>:8081` (ej. `http://100.53.209.11:8081`).
-
-### Paso 3: Despliegue en PC LAB 2 — Estaciones de Riego (`WM_WS 1` y `WM_WS 2`)
-En el ordenador del Laboratorio 2, abrir PowerShell en la carpeta del repositorio y apuntar a la IP pública de AWS:
-```powershell
-$env:IP_CENTRAL="100.53.209.11"
-$env:PUERTO_CENTRAL="8080"
-$env:IP_KAFKA="100.53.209.11"
-$env:PUERTO_KAFKA="9092"
-
-docker compose -f docker-compose.lab-ws.yml up -d --build
+sudo docker run -d --name wm_central --restart unless-stopped -p 8080:8080 -p 8081:8081 \
+  -e PUERTO_CENTRAL=8080 \
+  -e IP_KAFKA=$PUBLIC_IP \
+  -e PUERTO_KAFKA=9092 \
+  -e PORT=8081 \
+  carlosolivaa/practica-aws:latest
 ```
-* Para interactuar con el menú de la estación `WS_01` (simular fuga `KO` pulsando `ENTER`, resolverla volviendo a pulsar `ENTER`, o iniciar/parar riego manual con `2`/`3`):
-  ```powershell
-  docker attach ws01_engine
-  ```
 
-### Paso 4: Despliegue en PC LAB 1 — Operarios de Campo (`WM_FO 1` y `WM_FO 2`)
-En el ordenador del Laboratorio 1, abrir dos terminales de PowerShell apuntando al Kafka de AWS:
+### 4.3. Ejecución en los ordenadores del laboratorio (PC Estaciones y PC Operarios)
 
-* **Terminal 1 (`WM_FO 1` - Operario `FO_01` en modo interactivo o por fichero `tareas.txt`):**
-  ```powershell
-  $env:IP_KAFKA="100.53.209.11"; $env:PUERTO_KAFKA="9092"
-  docker compose -f docker-compose.lab-fo.yml run --rm fo_01
-  ```
-  *(Dentro de la consola de `FO_01`, escribir `WS_01#10` para regar 10 segundos o `FILE#tareas.txt` para ejecutar el lote automático con espera de 4 segundos entre servicios).*
+Tanto si Central está en AWS como si se ejecuta en un tercer ordenador del laboratorio (`lab_pc1_central.ps1`), en los otros dos ordenadores basta con indicar la IP donde corre Central/Kafka:
 
-* **Terminal 2 (`WM_FO 2` - Operario `FO_02`):**
-  ```powershell
-  $env:IP_KAFKA="100.53.209.11"; $env:PUERTO_KAFKA="9092"
-  docker compose -f docker-compose.lab-fo.yml run --rm fo_02
-  ```
+* **En el Ordenador de Estaciones (`WS_01` y `WS_02`):**
+  * Con Docker:
+    ```powershell
+    $env:IP_CENTRAL="<IP_CENTRAL>"; $env:PUERTO_CENTRAL="8080"
+    $env:IP_KAFKA="<IP_CENTRAL>";   $env:PUERTO_KAFKA="9092"
+    docker compose -f docker-compose.lab-ws.yml up -d --build
+    ```
+  * O directamente con el script interactivo: `.\lab_pc2_estaciones.ps1`
+
+* **En el Ordenador de Operarios (`FO_01` y `FO_02`):**
+  * Con Docker:
+    ```powershell
+    $env:IP_KAFKA="<IP_CENTRAL>"; $env:PUERTO_KAFKA="9092"
+    docker compose -f docker-compose.lab-fo.yml run --rm --build fo_01
+    ```
+  * O directamente con el script interactivo: `.\lab_pc3_operarios.ps1`
 
 ---
 
-## 5. Guion y Capturas de Pantalla del Funcionamiento
+## 5. Pruebas realizadas y capturas de funcionamiento
 
-1. **Captura 1 – Pipeline CI/CD en GitHub Actions y Docker Hub:**
-   * Muestra la ejecución con tic verde ✅ del workflow *Build and Push to Docker Hub* tras hacer `git push` y el repositorio `carlosolivaa/practica-aws` actualizado en Docker Hub.
-2. **Captura 2 – Instancia AWS EC2 y Contenedores Cloud (`wm_central` y `kafka`) en ejecución:**
-   * Muestra el panel de AWS EC2 (`Cloud-WM` con IP pública `100.53.209.11`) y la salida de `sudo docker ps` con `wm_central` y `kafka` activos.
-3. **Captura 3 – Cuadro de Mandos Web de `WM_Central` con Estaciones Conectadas (Estado VERDE `DISPONIBLE` y GRIS `DESCONECTADA`):**
-   * Muestra `http://100.53.209.11:8081` tras levantar `docker-compose.lab-ws.yml`, donde `WS_01` y `WS_02` pasan de Gris (`DESCONECTADA`) a Verde (`DISPONIBLE`).
-4. **Captura 4 – Activación de Riego por `WM_FO` (Individual y por Lotes `tareas.txt`) y Telemetría en Tiempo Real (VERDE PARPADEANDO):**
-   * Muestra la terminal de `FO_01` enviando `WS_01#10` (y `FILE#tareas.txt` con la pausa de 4 segundos), el gráfico de caudal en tiempo real, el volumen acumulado en litros y el resumen final `FIN_RIEGO` recibido por el operario.
-5. **Captura 5 – Simulación de Fuga (`KO`), Corte Automático de Riego (Estado ROJO `FUGA`) y Bloqueo por Central (Estado NARANJA `FUERA DE SERVICIO`):**
-   * Muestra cómo al pulsar `ENTER` en `ws01_engine` el estado pasa inmediatamente a Rojo (`FUGA`), se corta el riego en curso informando a todos los módulos, y cómo al pulsar de nuevo `ENTER` se resuelve la contingencia volviendo a `DISPONIBLE`, además del bloqueo manual desde Central en color Naranja (`FUERA DE SERVICIO`).
+Durante las pruebas hemos comprobado todos los casos que pide el enunciado:
+
+1. **Despliegue automático CI/CD y contenedores en AWS EC2:**
+   * Comprobamos cómo al hacer `git push`, GitHub Actions construye y sube la imagen a Docker Hub, y cómo en la instancia EC2 de AWS corren los contenedores `kafka` y `wm_central` mostrando el panel web en `http://<IP_AWS>:8081` con todas las estaciones inicialmente en gris (`DESCONECTADA`).
+   *(Insertar Captura 1 y Captura 2)*
+
+2. **Conexión de las estaciones (`WS_01` y `WS_02`) y consulta desde `WM_FO`:**
+   * Al lanzar las estaciones desde el PC del laboratorio apuntando a la IP de Central, se registran por sockets y pasan inmediatamente a color verde (`DISPONIBLE`). Al abrir `WM_FO`, el operario recibe la lista de estaciones y ve que `WS_01` y `WS_02` están disponibles para regar.
+   *(Insertar Captura 3)*
+
+3. **Riego temporizado, telemetría en tiempo real y ejecución por fichero (`tareas.txt`):**
+   * Desde `FO_01` lanzamos `WS_01#10` y después `FILE#tareas.txt`. Durante el riego la estación parpadea en verde (`REGANDO`), el panel web muestra el caudal y los litros acumulados segundo a segundo, y al terminar llega a la consola del operario el mensaje `FIN DE RIEGO` con el volumen total consumido, esperando 4 segundos antes de pasar a la siguiente orden del fichero.
+   *(Insertar Captura 4)*
+
+4. **Simulación de fuga (`KO`), corte de agua y bloqueo desde Central (`FUERA DE SERVICIO`):**
+   * Mientras `WS_01` está regando, pulsamos `ENTER` en la consola de `ws01_engine` (o cerramos el Engine). El Monitor detecta el fallo en el siguiente segundo, envía `FUGA#WS_01` a Central, la estación se pone en rojo (`FUGA`), se corta el suministro inmediatamente y `FO_01` recibe la alerta de cancelación por fuga. Al volver a pulsar `ENTER` en el Engine, el Monitor detecta `OK` y devuelve la estación a `DISPONIBLE`. Por último, probamos a bloquear `WS_02` desde Central comprobando que pasa a naranja (`FUERA DE SERVICIO`) y rechaza peticiones de riego con `NACK`.
+   *(Insertar Captura 5)*
