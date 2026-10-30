@@ -343,6 +343,11 @@ public class WM_Central {
             ServidorWebCentral.registrarEvento("Riego finalizado en " + idWS + " (Total: " + litrosTotales + " L)");
             enviarFO(idWS, idFO, "FIN_RIEGO#" + idWS + "#" + litrosTotales);
             espera(idFO);
+        } else if (accion.equals("LISTAR") && partes.length >= 2) {
+            String idFO = partes[1].trim();
+            List<String> estaciones = GestorCentral.getInstance().obtenerEstaciones();
+            String payload = String.join("|", estaciones);
+            enviarFO("CENTRAL", idFO, "LISTA#" + payload);
         }
     }
 

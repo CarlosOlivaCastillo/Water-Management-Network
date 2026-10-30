@@ -119,13 +119,16 @@ public class WM_FO {
     public static void ejecutarInteractivo() {
         Scanner consola = new Scanner(System.in);
         System.out.println("=== PANEL FIELD OPERATOR [" + idFO + "] ===");
-        System.out.println("Modo interactivo. Escriba 'AYUDA' para ver comandos.");
+        System.out.println("Modo interactivo. Escriba 'AYUDA' para ver comandos o 'LISTAR' para ver estaciones disponibles.");
+
+        // Solicitar automáticamente a Central las estaciones disponibles al arrancar
+        listarEstaciones();
 
         while (true) {
             System.out.print("\n[" + idFO + "] => ");
-            String linea = consola.nextLine();
+            String linea = consola.nextLine().trim();
 
-            if (linea.trim().isEmpty()) {
+            if (linea.isEmpty()) {
                 continue;
             }
 
@@ -136,11 +139,18 @@ public class WM_FO {
 
             if (linea.equalsIgnoreCase("AYUDA") || linea.equalsIgnoreCase("HELP")) {
                 System.out.println("\n--- COMANDOS DISPONIBLES ---");
-                System.out.println(" 1. Riego con duración : <idWS>#<segundos>   (Ej: WS_01#10)");
-                System.out.println(" 2. Riego indefinido   : <idWS>              (Ej: WS_01)");
-                System.out.println(" 3. Parar riego manual : STOP#<idWS>         (Ej: STOP#WS_01)");
-                System.out.println(" 4. Cargar fichero     : FILE#<ruta>         (Ej: FILE#tareas.txt)");
-                System.out.println(" 5. Salir del programa : SALIR o EXIT");
+                System.out.println(" 1. Ver disponibles    : LISTAR o DISPONIBLES");
+                System.out.println(" 2. Riego con duración : <idWS>#<segundos>   (Ej: WS_01#10)");
+                System.out.println(" 3. Riego indefinido   : <idWS>              (Ej: WS_01)");
+                System.out.println(" 4. Parar riego manual : STOP#<idWS>         (Ej: STOP#WS_01)");
+                System.out.println(" 5. Cargar fichero     : FILE#<ruta>         (Ej: FILE#tareas.txt)");
+                System.out.println(" 6. Salir del programa : SALIR o EXIT");
+                continue;
+            }
+
+            if (linea.equalsIgnoreCase("LISTAR") || linea.equalsIgnoreCase("DISPONIBLES")
+                    || linea.equalsIgnoreCase("ESTACIONES") || linea.equalsIgnoreCase("ESTADO")) {
+                listarEstaciones();
                 continue;
             }
 
@@ -182,6 +192,11 @@ public class WM_FO {
             }
         }
         consola.close();
+    }
+
+    public static void listarEstaciones() {
+        String mensaje = "LISTAR#" + idFO;
+        enviarKafka(mensaje, idFO);
     }
 
     public static void stopRiego(String idWS) {
@@ -229,7 +244,7 @@ public class WM_FO {
                         String mensaje = record.value();
                         String pantalla = gestionarMensaje(mensaje);
                         System.out.println("\n[CENTRAL => " + idFO + "] " + pantalla);
-                        System.out.print("=> ");
+                        System.out.print("[" + idFO + "] => ");
                     }
                 }
             } catch (Exception e) {
@@ -242,6 +257,40 @@ public class WM_FO {
     }
 
     public static String gestionarMensaje(String msg) {
+        if (msg.startsWith("LISTA#")) {
+            String payload = msg.substring("LISTA#".length());
+            StringBuilder sb = new StringBuilder();
+            sb.append("ESTADO DE ESTACIONES EN CENTRAL:\n");
+            sb.append("  -------------------------------------------------------------------------\n");
+            sb.append(String.format("  %-8s | %-18s | %-26s | %-10s\n", "ID_WS", "ESTADO", "UBICACIÓN", "OPERARIO"));
+            sb.append("  -------------------------------------------------------------------------\n");
+
+            List<String> disponibles = new ArrayList<>();
+            if (!payload.trim().isEmpty()) {
+                String[] filas = payload.split("\\|");
+                for (String fila : filas) {
+                    String[] cols = fila.split("#");
+                    if (cols.length >= 3) {
+                        String estId = cols[0].trim();
+                        String estado = cols[1].trim();
+                        String ubicacion = cols[2].trim();
+                        String op = (cols.length >= 4) ? cols[3].trim() : "-";
+                        sb.append(String.format("  %-8s | %-18s | %-26s | %-10s\n", estId, estado, ubicacion, op));
+                        if ("DISPONIBLE".equalsIgnoreCase(estado)) {
+                            disponibles.add(estId);
+                        }
+                    }
+                }
+            }
+            sb.append("  -------------------------------------------------------------------------\n");
+            if (disponibles.isEmpty()) {
+                sb.append("  -> Estaciones DISPONIBLES para regar ahora: NINGUNA");
+            } else {
+                sb.append("  -> Estaciones DISPONIBLES para regar ahora: ").append(String.join(", ", disponibles));
+            }
+            return sb.toString();
+        }
+
         String[] partes = msg.split("#");
         String res = partes[0].trim();
         String idWS = partes.length > 1 ? partes[1].trim() : "";

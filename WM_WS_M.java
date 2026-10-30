@@ -45,16 +45,20 @@ public class WM_WS_M {
             }
         }
 
-        // 2. Levantar el servidor para escuchar el Engine
+        // 2. Levantar el servidor para escuchar el Engine de forma continua
         try (ServerSocket skServidor = new ServerSocket(puertoEngine)) {
-            System.out.println("Monitor escuchando al Engine en el puerto " + puertoEngine);
+            System.out.println("Monitor [" + idWS + "] escuchando al Engine en el puerto " + puertoEngine);
 
-            // Espera hasta que conecte el Engine
-            Socket skEngine = skServidor.accept();
-            System.out.println("Engine conectado al Monitor localmente.");
+            while (true) {
+                System.out.println("Esperando conexión del Engine [" + idWS + "] en el puerto " + puertoEngine + "...");
+                Socket skEngine = skServidor.accept();
+                System.out.println("Engine [" + idWS + "] conectado al Monitor.");
 
-            iniciarBucleDeSalud(skEngine, salidaCentral, entradaCentral, idWS);
+                iniciarBucleDeSalud(skEngine, salidaCentral, entradaCentral, idWS);
 
+                try { skEngine.close(); } catch (Exception ignored) {}
+                System.out.println("Monitor [" + idWS + "] sigue activo a la espera de que el Engine vuelva a conectarse...");
+            }
         } catch (Exception e) {
             System.out.println("Error en el servidor del Monitor: " + e.toString());
         }
