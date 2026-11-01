@@ -20,7 +20,7 @@ if ([string]::IsNullOrWhiteSpace($IpAws)) {
 
 function Lanzar-Operario($idFO, $argExtra = "") {
     $titulo = "[FIELD OPERATOR $idFO] - CONSOLA OPERARIO"
-    $cmd = "`$host.UI.RawUI.WindowTitle = '$titulo'; Write-Host '================================================' -ForegroundColor Magenta; Write-Host '   $titulo' -ForegroundColor Magenta; Write-Host '   Comandos: LISTAR | WS_01#10 | STOP#WS_01 | FILE#tareas.txt' -ForegroundColor Cyan; Write-Host '================================================' -ForegroundColor Magenta; java -Dorg.slf4j.simpleLogger.defaultLogLevel=off -cp '$cp' WM_FO $IpAws 9092 $idFO $argExtra"
+    $cmd = "`$host.UI.RawUI.WindowTitle = '$titulo'; Write-Host '================================================' -ForegroundColor Magenta; Write-Host '   $titulo' -ForegroundColor Magenta; Write-Host '   Comandos: LISTAR | WS_01#10 | STOP#WS_01 | FILE#tareas.txt' -ForegroundColor Cyan; Write-Host '================================================' -ForegroundColor Magenta; java -cp '$cp' WM_FO $IpAws 9092 $idFO $argExtra"
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", $cmd
 }
 

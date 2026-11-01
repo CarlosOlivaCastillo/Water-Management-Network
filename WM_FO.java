@@ -15,7 +15,12 @@ public class WM_FO {
     private static final String TOPIC_PETICIONES_FO = "peticiones_riego";
     private static final String TOPIC_RESPUESTAS_FO = "respuestas_riego";
 
+    static {
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "off");
+    }
+
     public static void main(String[] args) {
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "off");
         if (args.length < 3) {
             System.out.println("=================================================================");
             System.out.println("  Uso de WM_FO (Field Operator):");

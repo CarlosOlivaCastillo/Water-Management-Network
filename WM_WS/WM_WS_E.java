@@ -22,7 +22,12 @@ public class WM_WS_E {
     private static volatile double volumenAcumulado = 0.0;
     private static final double CAUDAL_ESTANDAR = 12.5; // Litros por segundo
 
+    static {
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "off");
+    }
+
     public static void main(String[] args) {
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "off");
         if (args.length < 4) {
             System.out.println("Uso: java WM_WS_E <IP_Kafka> <Puerto_Kafka> <IP_Monitor> <Puerto_Monitor> [ID_WS]");
             System.exit(1);
