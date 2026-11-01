@@ -83,100 +83,59 @@ powershell -ExecutionPolicy Bypass -File .\lab_pc1_central.ps1
 
 ---
 
-### 🌱 ORDENADOR 2: Estaciones de Riego (`WS_01` y `WS_02`)
+### 🌱 ORDENADOR DE ESTACIONES: Estaciones de Riego (`WS_01` y `WS_02`)
 
-Sustituye `<IP_CENTRAL>` por la IP del Ordenador 1 (o la IP pública de AWS).
-
-#### Opción 2A — Con Script Automático (Recomendado):
-Abre PowerShell en el Ordenador 2 y ejecuta:
+#### Opción A — Con el Script Interactivo de Laboratorio (Recomendado):
+Abre PowerShell en la carpeta del proyecto y ejecuta:
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\lab_pc2_estaciones.ps1
+powershell -ExecutionPolicy Bypass -File .\1_LAB_ESTACIONES.ps1
 ```
-*(Te pedirá la IP de Central/Kafka y te dará a elegir entre `1 = Docker Compose` o `2 = Terminales Java interactivas`).*
+* **¿Qué hace este script?**
+  1. Te pide por pantalla la **IP de Amazon AWS** (o `ENTER` si pruebas en `localhost`).
+  2. Abre el navegador en `http://<IP_AWS>:8081` y lanza 4 terminales independientes con **nombre propio en la barra de título de Windows**:
+     * `[MONITOR WS_01] - Puerto 5001`
+     * `[ENGINE WS_01] - PULSA ENTER PARA FUGA`
+     * `[MONITOR WS_02] - Puerto 5002`
+     * `[ENGINE WS_02] - PULSA ENTER PARA FUGA`
+  3. Deja abierto un **menú rápido de corrección** para:
+     * `[1]` Desplegar al vuelo una nueva estación `WS_03`.
+     * `[2]` Lanzar una estación NO registrada (`WS_99`) para demostrar el rechazo `<NACK>`.
+     * `[3]` / `[4]` Reabrir un Monitor o un Engine tras haberlo cerrado con `Ctrl+C`.
 
-#### Opción 2B — Con Comandos Manuales en Docker (Windows y Ubuntu):
-* **En Windows (PowerShell):**
-  ```powershell
-  $env:IP_CENTRAL="<IP_CENTRAL>"; $env:PUERTO_CENTRAL="8080"
-  $env:IP_KAFKA="<IP_CENTRAL>";   $env:PUERTO_KAFKA="9092"
-  docker compose -f docker-compose.lab-ws.yml up -d --build
-  ```
-* **En Ubuntu / Linux (Bash):**
-  ```bash
-  IP_CENTRAL="<IP_CENTRAL>" PUERTO_CENTRAL="8080" IP_KAFKA="<IP_CENTRAL>" PUERTO_KAFKA="9092" docker compose -f docker-compose.lab-ws.yml up -d --build
-  ```
-* **Para entrar al teclado de `WS_01` y simular una fuga (`KO`) pulsando `ENTER`:**
-  ```bash
-  docker attach ws01_engine
-  ```
-  *(Para salir del `attach` sin apagar el contenedor: `Ctrl + P` seguido de `Ctrl + Q`).*
-
-#### Opción 2C — Con Comandos Manuales en Java (sin Docker en el PC 2):
+#### Opción B — Con Comandos Manuales en Java:
 * **En Windows (separador `;`):**
   ```powershell
-  javac -encoding UTF-8 -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" *.java
-
-  # Terminal 1 (Monitor WS_01):
-  java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_WS_M 5001 <IP_CENTRAL> 8080 WS_01
-
-  # Terminal 2 (Engine WS_01 - Pulsa ENTER aquí para activar/resolver Fuga KO/OK):
-  java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_WS_E <IP_CENTRAL> 9092 localhost 5001 WS_01
+  java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_WS_M 5001 <IP_AWS> 8080 WS_01
+  java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_WS_E <IP_AWS> 9092 localhost 5001 WS_01
   ```
 * **En Ubuntu / Linux (separador `:`):**
   ```bash
-  javac -encoding UTF-8 -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" *.java
-
-  # Terminal 1 (Monitor WS_01):
-  java -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" WM_WS_M 5001 <IP_CENTRAL> 8080 WS_01
-
-  # Terminal 2 (Engine WS_01 - Pulsa ENTER aquí para activar/resolver Fuga KO/OK):
-  java -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" WM_WS_E <IP_CENTRAL> 9092 localhost 5001 WS_01
+  java -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" WM_WS_M 5001 <IP_AWS> 8080 WS_01
+  java -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" WM_WS_E <IP_AWS> 9092 localhost 5001 WS_01
   ```
 
 ---
 
-### 👷 ORDENADOR 3: Operarios de Campo (`FO_01` y `FO_02`)
+### 👷 ORDENADOR DE OPERARIOS: Operarios de Campo (`FO_01` y `FO_02`)
 
-Sustituye `<IP_CENTRAL>` por la IP del Ordenador 1 (o la IP pública de AWS).
-
-#### Opción 3A — Con Script Automático (Recomendado en Windows):
-Abre PowerShell en el Ordenador 3 y ejecuta:
+#### Opción A — Con el Script Interactivo de Laboratorio (Recomendado):
+Abre PowerShell en el ordenador de operarios y ejecuta:
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\lab_pc3_operarios.ps1
+powershell -ExecutionPolicy Bypass -File .\2_LAB_OPERARIOS.ps1
 ```
-*(Te pedirá la IP de Kafka y abrirá automáticamente las consolas interactivas de `FO_01` y `FO_02`).*
+* **¿Qué hace este script?**
+  1. Te pide por pantalla la **IP de Amazon AWS** (o `ENTER` para `localhost`).
+  2. Abre las consolas de **`FO_01`** y **`FO_02`** con el título de ventana **`[FIELD OPERATOR FO_01] - CONSOLA OPERARIO`** y **`[FIELD OPERATOR FO_02] - CONSOLA OPERARIO`** para localizarlas al instante en la barra de tareas.
+  3. Deja abierto un **menú rápido** para reabrir `FO_01` tras cerrarlo a mitad de un riego, lanzar `FO_03` o ejecutar automáticamente el lote `tareas.txt`.
 
-#### Opción 3B — Con Comandos Manuales en Docker (Windows y Ubuntu):
-* **En Windows (PowerShell):**
-  ```powershell
-  $env:IP_KAFKA="<IP_CENTRAL>"; $env:PUERTO_KAFKA="9092"
-  docker compose -f docker-compose.lab-fo.yml run --rm --build fo_01
-  ```
-* **En Ubuntu / Linux (Bash):**
-  ```bash
-  IP_KAFKA="<IP_CENTRAL>" PUERTO_KAFKA="9092" docker compose -f docker-compose.lab-fo.yml run --rm --build fo_01
-  ```
-
-#### Opción 3C — Con Comandos Manuales en Java (sin Docker en el PC 3):
+#### Opción B — Con Comandos Manuales en Java:
 * **En Windows (separador `;`):**
   ```powershell
-  javac -encoding UTF-8 -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" *.java
-
-  # Modo Interactivo (Muestra automáticamente las estaciones disponibles al arrancar o escribiendo LISTAR):
-  java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_FO <IP_CENTRAL> 9092 FO_01
-
-  # Modo Fichero por Lotes directo:
-  java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_FO <IP_CENTRAL> 9092 FO_01 tareas.txt
-
-  # Modo Orden Única directa (WS_01 durante 10 segundos):
-  java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_FO <IP_CENTRAL> 9092 FO_01 WS_01 10
+  java -cp ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar" WM_FO <IP_AWS> 9092 FO_01
   ```
 * **En Ubuntu / Linux (separador `:`):**
   ```bash
-  javac -encoding UTF-8 -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" *.java
-
-  # Modo Interactivo (Muestra automáticamente las estaciones disponibles al arrancar o escribiendo LISTAR):
-  java -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" WM_FO <IP_CENTRAL> 9092 FO_01
+  java -cp ".:lib/*:kafka-clients.jar:slf4j-api.jar:slf4j-simple.jar" WM_FO <IP_AWS> 9092 FO_01
   ```
 
 ---
