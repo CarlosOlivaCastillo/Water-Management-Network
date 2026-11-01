@@ -36,7 +36,12 @@ public class WM_Central {
     private static final ConcurrentHashMap<String, String> ultimoResultadoFO = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, String> ultimoOperarioFuga = new ConcurrentHashMap<>();
 
+    static {
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "off");
+    }
+
     public static void main(String[] args) {
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "off");
         if (args.length < 3) {
             System.out.println("Uso incorrecto de WM_Central.");
             System.out.println("Sintaxis: java WM_Central <puerto_central> <ip_kafka> <puerto_kafka> [puerto_web]");
@@ -424,8 +429,11 @@ public class WM_Central {
 
     public static void bloquearEstacion(String idWS) {
         if (idWS != null && idWS.equalsIgnoreCase("ALL")) {
-            for (String estId : GestorCentral.getInstance().obtenerIdsEstaciones()) {
-                bloquearEstacion(estId);
+            for (String info : GestorCentral.getInstance().obtenerEstaciones()) {
+                String[] p = info.split("#");
+                if (p.length >= 2 && !"DESCONECTADA".equalsIgnoreCase(p[1].trim())) {
+                    bloquearEstacion(p[0].trim());
+                }
             }
             return;
         }
@@ -450,8 +458,11 @@ public class WM_Central {
 
     public static void activarEstacion(String idWS) {
         if (idWS != null && idWS.equalsIgnoreCase("ALL")) {
-            for (String estId : GestorCentral.getInstance().obtenerIdsEstaciones()) {
-                activarEstacion(estId);
+            for (String info : GestorCentral.getInstance().obtenerEstaciones()) {
+                String[] p = info.split("#");
+                if (p.length >= 2 && !"DESCONECTADA".equalsIgnoreCase(p[1].trim())) {
+                    activarEstacion(p[0].trim());
+                }
             }
             return;
         }

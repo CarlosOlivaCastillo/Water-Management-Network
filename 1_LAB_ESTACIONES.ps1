@@ -1,5 +1,5 @@
 # =============================================================================
-# 1_LAB_ESTACIONES.ps1 - ORDENADOR DE ESTACIONES DE RIEGO (WM_WS)
+# 1_LAB_ESTACIONES.ps1 - ORDENADOR DE ESTACIONES DE RIEGO (WM_WS) + MODO LOCAL
 # =============================================================================
 $host.UI.RawUI.WindowTitle = "PANEL CONTROL ESTACIONES (PC LAB)"
 $projectDir = $PSScriptRoot
@@ -11,11 +11,17 @@ Write-Host "=================================================================" -
 Write-Host "   ORDENADOR DE ESTACIONES DE RIEGO (WM_WS_M y WM_WS_E)          " -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 
-$IpAws = Read-Host "Introduce la IP de Amazon AWS (o pulsa ENTER para localhost)"
+$IpAws = Read-Host "Introduce la IP de Amazon AWS (o pulsa ENTER para probar en LOCALHOST)"
 if ([string]::IsNullOrWhiteSpace($IpAws)) {
     $IpAws = "localhost"
 } else {
     $IpAws = $IpAws.Trim()
+}
+
+function Lanzar-CentralLocal() {
+    $titulo = "[CENTRAL WM_CENTRAL] - SERVIDOR CENTRAL Y WEB (8080/8081)"
+    $cmd = "`$host.UI.RawUI.WindowTitle = '$titulo'; Write-Host '================================================' -ForegroundColor Cyan; Write-Host '   $titulo' -ForegroundColor Cyan; Write-Host '   Web Dashboard: http://localhost:8081' -ForegroundColor Yellow; Write-Host '================================================' -ForegroundColor Cyan; java -cp '$cp' WM_Central 8080 localhost 9092"
+    Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", $cmd
 }
 
 function Lanzar-Monitor($idWS, $puertoLocal) {
@@ -28,6 +34,43 @@ function Lanzar-Engine($idWS, $puertoLocal) {
     $titulo = "[ENGINE $idWS] - PULSA ENTER PARA FUGA"
     $cmd = "`$host.UI.RawUI.WindowTitle = '$titulo'; Write-Host '================================================' -ForegroundColor Green; Write-Host '   $titulo' -ForegroundColor Green; Write-Host '================================================' -ForegroundColor Green; java -cp '$cp' WM_WS_E $IpAws 9092 localhost $puertoLocal $idWS"
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", $cmd
+}
+
+if ($IpAws -eq "localhost" -or $IpAws -eq "127.0.0.1") {
+    Write-Host "`n[MODO LOCALHOST DETECTADO]" -ForegroundColor Yellow
+    $kafkaOk = $false
+    try {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        $ar = $tcp.BeginConnect("127.0.0.1", 9092, $null, $null)
+        if ($ar.AsyncWaitHandle.WaitOne(800, $false) -and $tcp.Connected) {
+            $kafkaOk = $true
+        }
+        $tcp.Close()
+    } catch {}
+
+    if (-not $kafkaOk) {
+        Write-Host "-> Kafka local (puerto 9092) no detectado. Intentando levantar contenedor 'broker' con Docker..." -ForegroundColor Yellow
+        docker compose up -d broker 2>$null
+        Start-Sleep -Seconds 3
+    }
+
+    $centralOk = $false
+    try {
+        $tcp2 = New-Object System.Net.Sockets.TcpClient
+        $ar2 = $tcp2.BeginConnect("127.0.0.1", 8080, $null, $null)
+        if ($ar2.AsyncWaitHandle.WaitOne(800, $false) -and $tcp2.Connected) {
+            $centralOk = $true
+        }
+        $tcp2.Close()
+    } catch {}
+
+    if (-not $centralOk) {
+        Write-Host "-> Lanzando ventana de WM_Central en localhost (Puerto TCP 8080 / Web 8081)..." -ForegroundColor Cyan
+        Lanzar-CentralLocal
+        Start-Sleep -Seconds 2
+    } else {
+        Write-Host "-> WM_Central ya esta escuchando en localhost:8080." -ForegroundColor Green
+    }
 }
 
 Write-Host "`n-> Abriendo Panel Web de Central en http://${IpAws}:8081 ..." -ForegroundColor Cyan
@@ -53,6 +96,9 @@ while ($true) {
     Write-Host "  3 : Reabrir SOLO un Monitor caido (ej. tras cerrarlo con Ctrl+C)" -ForegroundColor White
     Write-Host "  4 : Reabrir SOLO un Engine caido  (ej. tras cerrarlo con Ctrl+C)" -ForegroundColor White
     Write-Host "  5 : Desplegar otra estacion personalizada (WS_04, WS_05...)" -ForegroundColor White
+    if ($IpAws -eq "localhost" -or $IpAws -eq "127.0.0.1") {
+        Write-Host "  6 : Reabrir WM_Central local (si lo cerraste con Ctrl+C)" -ForegroundColor Cyan
+    }
     Write-Host "  0 : Salir de este menu" -ForegroundColor Gray
     Write-Host "=================================================================" -ForegroundColor Cyan
 
@@ -77,6 +123,8 @@ while ($true) {
         Lanzar-Monitor $ws.Trim() $puerto.Trim()
         Start-Sleep -Seconds 1
         Lanzar-Engine $ws.Trim() $puerto.Trim()
+    } elseif ($op -eq "6" -and ($IpAws -eq "localhost" -or $IpAws -eq "127.0.0.1")) {
+        Lanzar-CentralLocal
     } elseif ($op -eq "0") {
         break
     }

@@ -123,18 +123,20 @@ public final class GestorCentral {
         String peticion = partes[0].trim();
 
         switch (peticion) {
-            case "REGISTRO" -> {
+            case "REGISTRO": {
                 // REGISTRO#IDWS#UBICACION -> Autenticar que la WS esté registrada en la BD
                 if (partes.length >= 2) {
                     String idWS = partes[1].trim();
                     String ubicacion = (partes.length >= 3) ? partes[2].trim() : "";
                     esvalido = autenticarYConectarEstacion(idWS, ubicacion);
                 }
+                break;
             }
-            case "PING" -> {
+            case "PING": {
                 esvalido = true;
+                break;
             }
-            case "START_RIEGO" -> {
+            case "START_RIEGO": {
                 // START_RIEGO#IDWS#IDFO#DURACION
                 if (partes.length == 4) {
                     String idWS = partes[1].trim();
@@ -149,8 +151,10 @@ public final class GestorCentral {
                         esvalido = autorizarRiego(idWS, idFO, duracion);
                     }
                 }
+                break;
             }
-            case "AVERIA", "FUGA" -> {
+            case "AVERIA":
+            case "FUGA": {
                 // AVERIA#IDWS o FUGA#IDWS
                 if (partes.length == 2) {
                     String idWS = partes[1].trim();
@@ -160,21 +164,24 @@ public final class GestorCentral {
                     String res = esvalido ? "<ACK>" : "<NACK>";
                     return res + "#" + actual + (operario != null ? "#" + operario : "");
                 }
+                break;
             }
-            case "STOP_RIEGO" -> {
+            case "STOP_RIEGO": {
                 // STOP_RIEGO#IDWS[#idFO]
                 if (partes.length >= 2) {
                     String idWS = partes[1].trim();
                     esvalido = finalizarRiego(idWS);
                 }
+                break;
             }
-            case "DESCONEXION" -> {
+            case "DESCONEXION": {
                 if (partes.length == 2) {
                     String idWS = partes[1].trim();
                     esvalido = actualizarEstado(idWS, "DESCONECTADA");
                 }
+                break;
             }
-            case "BLOQUEAR" -> {
+            case "BLOQUEAR": {
                 if (partes.length == 2) {
                     String idWS = partes[1].trim();
                     String actual = estaRegando(idWS) ? "R" : "D";
@@ -182,15 +189,19 @@ public final class GestorCentral {
                     String res = esvalido ? "<ACK>" : "<NACK>";
                     return res + "#" + actual;
                 }
+                break;
             }
-            case "ACTIVAR", "FIN_FUGA" -> {
+            case "ACTIVAR":
+            case "FIN_FUGA": {
                 if (partes.length == 2) {
                     String idWS = partes[1].trim();
                     esvalido = actualizarEstado(idWS, "DISPONIBLE");
                 }
+                break;
             }
-            default -> {
+            default: {
                 esvalido = false;
+                break;
             }
         }
 
