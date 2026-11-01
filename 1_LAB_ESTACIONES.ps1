@@ -20,13 +20,13 @@ if ([string]::IsNullOrWhiteSpace($IpAws)) {
 
 function Lanzar-Monitor($idWS, $puertoLocal) {
     $titulo = "[MONITOR $idWS] - Puerto $puertoLocal"
-    $cmd = "`$host.UI.RawUI.WindowTitle = '$titulo'; Write-Host '================================================' -ForegroundColor Yellow; Write-Host '   $titulo' -ForegroundColor Yellow; Write-Host '================================================' -ForegroundColor Yellow; java -cp '$cp' WM_WS_M $puertoLocal $IpAws 8080 $idWS"
+    $cmd = "`$host.UI.RawUI.WindowTitle = '$titulo'; Write-Host '================================================' -ForegroundColor Yellow; Write-Host '   $titulo' -ForegroundColor Yellow; Write-Host '================================================' -ForegroundColor Yellow; java -Dorg.slf4j.simpleLogger.defaultLogLevel=off -cp '$cp' WM_WS_M $puertoLocal $IpAws 8080 $idWS"
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", $cmd
 }
 
 function Lanzar-Engine($idWS, $puertoLocal) {
     $titulo = "[ENGINE $idWS] - PULSA ENTER PARA FUGA"
-    $cmd = "`$host.UI.RawUI.WindowTitle = '$titulo'; Write-Host '================================================' -ForegroundColor Green; Write-Host '   $titulo' -ForegroundColor Green; Write-Host '================================================' -ForegroundColor Green; java -cp '$cp' WM_WS_E $IpAws 9092 localhost $puertoLocal $idWS"
+    $cmd = "`$host.UI.RawUI.WindowTitle = '$titulo'; Write-Host '================================================' -ForegroundColor Green; Write-Host '   $titulo' -ForegroundColor Green; Write-Host '================================================' -ForegroundColor Green; java -Dorg.slf4j.simpleLogger.defaultLogLevel=off -cp '$cp' WM_WS_E $IpAws 9092 localhost $puertoLocal $idWS"
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", $cmd
 }
 
