@@ -4,7 +4,7 @@
 $host.UI.RawUI.WindowTitle = "PANEL CONTROL OPERARIOS (PC LAB)"
 $projectDir = $PSScriptRoot
 if (-not $projectDir) { $projectDir = (Get-Location).Path }
-$cp = ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar"
+$cp = "lib/WaterManagement.jar;.;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar"
 
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Magenta
