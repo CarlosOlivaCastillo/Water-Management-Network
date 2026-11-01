@@ -242,25 +242,30 @@ public class ServidorWebCentral {
             String msg = "";
 
             if ("START".equalsIgnoreCase(accion) && idWS != null) {
-                if (GestorCentral.getInstance().autorizarRiego(idWS, "WEB_PANEL", duracion)) {
-                    enviarOrdenKafka("INICIAR_RIEGO#" + idWS);
-                    registrarEvento("Orden WEB: Riego iniciado en " + idWS + " por " + duracion + "s");
-                    ok = true;
-                    msg = "Riego activado correctamente";
+                List<String> objetivos = "ALL".equalsIgnoreCase(idWS)
+                        ? GestorCentral.getInstance().obtenerIdsEstaciones()
+                        : Collections.singletonList(idWS);
+                int iniciadas = 0;
+                for (String target : objetivos) {
+                    if (GestorCentral.getInstance().autorizarRiego(target, "WEB_PANEL", duracion)) {
+                        enviarOrdenKafka("INICIAR_RIEGO#" + target + "#" + duracion);
+                        registrarEvento("Orden WEB: Riego iniciado en " + target + " por " + duracion + "s");
+                        iniciadas++;
 
-                    final int d = duracion;
-                    final String ws = idWS;
-                    new Thread(() -> {
-                        try {
-                            Thread.sleep(d * 1000L);
-                            GestorCentral.getInstance().actualizarEstado(ws, "DISPONIBLE");
-                            enviarOrdenKafka("PARAR_RIEGO#" + ws);
-                            registrarEvento("Fin temporizado de riego WEB para " + ws);
-                        } catch (Exception ignored) {}
-                    }).start();
-                } else {
-                    msg = "No se pudo autorizar el riego (estación ocupada, fuera de servicio o en avería)";
+                        final int d = duracion;
+                        final String ws = target;
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(d * 1000L);
+                                GestorCentral.getInstance().actualizarEstado(ws, "DISPONIBLE");
+                                enviarOrdenKafka("PARAR_RIEGO#" + ws);
+                                registrarEvento("Fin temporizado de riego WEB para " + ws);
+                            } catch (Exception ignored) {}
+                        }).start();
+                    }
                 }
+                ok = iniciadas > 0;
+                msg = ok ? "Riego activado en " + iniciadas + " estación(es)" : "Ninguna estación estaba disponible para iniciar riego";
             } else if ("STOP".equalsIgnoreCase(accion) && idWS != null) {
                 GestorCentral.getInstance().actualizarEstado(idWS, "DISPONIBLE");
                 enviarOrdenKafka("PARAR_RIEGO#" + idWS);
@@ -302,17 +307,13 @@ public class ServidorWebCentral {
             String msg = "";
 
             if ("BLOQUEAR".equalsIgnoreCase(accion) && idWS != null) {
-                // Bloquear WS: finalizar riego si hubiera y poner FUERA_DE_SERVICIO
-                GestorCentral.getInstance().actualizarEstado(idWS, "FUERA_DE_SERVICIO");
-                enviarOrdenKafka("PARAR_RIEGO#" + idWS);
-                registrarEvento("Central: Estación " + idWS + " BLOQUEADA (Fuera de Servicio)");
+                WM_Central.bloquearEstacion(idWS);
                 ok = true;
-                msg = "Estación puesta Fuera de Servicio";
+                msg = "Estación(es) puesta(s) Out of Service";
             } else if ("ACTIVAR".equalsIgnoreCase(accion) && idWS != null) {
-                GestorCentral.getInstance().actualizarEstado(idWS, "DISPONIBLE");
-                registrarEvento("Central: Estación " + idWS + " ACTIVADA (Disponible)");
+                WM_Central.activarEstacion(idWS);
                 ok = true;
-                msg = "Estación activada";
+                msg = "Estación(es) activada(s)";
             }
 
             String respuesta = "{\"success\":" + ok + ",\"message\":\"" + msg + "\"}";
@@ -420,6 +421,18 @@ public class ServidorWebCentral {
             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span> Sistema en Línea
             </span>
+            <button onclick="iniciarRiegoPrompt('ALL')" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-play"></i>
+                <span>Regar Todas</span>
+            </button>
+            <button onclick="cambiarEstado('ALL', 'BLOQUEAR')" class="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-ban"></i>
+                <span>Bloquear Todas (Out of Service)</span>
+            </button>
+            <button onclick="cambiarEstado('ALL', 'ACTIVAR')" class="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-check"></i>
+                <span>Activar Todas</span>
+            </button>
             <button onclick="paradaEmergencia()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold shadow-lg shadow-rose-600/30 transition flex items-center space-x-2">
                 <i class="fa-solid fa-triangle-exclamation"></i>
                 <span>Parada de Emergencia</span>
@@ -465,7 +478,7 @@ public class ServidorWebCentral {
             </div>
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
                 <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
-                    <span>Fuera Servicio (Naranja)</span>
+                    <span>Out of Service (Naranja)</span>
                     <i class="fa-solid fa-ban text-amber-400"></i>
                 </div>
                 <div id="stat-bloqueadas" class="text-2xl font-extrabold text-amber-400">0</div>
@@ -487,23 +500,23 @@ public class ServidorWebCentral {
                 <div class="flex flex-wrap items-center gap-3 text-xs bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
                     <span class="flex items-center space-x-1.5 text-emerald-400 font-medium">
                         <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                        <span>Disponible (Verde)</span>
+                        <span>Available / Disponible (Verde)</span>
                     </span>
                     <span class="flex items-center space-x-1.5 text-emerald-300 font-medium">
                         <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-                        <span>Regando (Verde Parpadeante)</span>
+                        <span>Watering / Regando (Verde Parp.)</span>
                     </span>
                     <span class="flex items-center space-x-1.5 text-rose-400 font-medium">
                         <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-                        <span>Fuga (Rojo)</span>
+                        <span>Leak / Fuga (Rojo)</span>
                     </span>
                     <span class="flex items-center space-x-1.5 text-amber-400 font-medium">
                         <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-                        <span>Fuera de Servicio (Naranja)</span>
+                        <span>Out of Service (Naranja)</span>
                     </span>
                     <span class="flex items-center space-x-1.5 text-slate-400 font-medium">
                         <span class="w-2.5 h-2.5 rounded-full bg-slate-600"></span>
-                        <span>Desconectada (Gris)</span>
+                        <span>Disconnected (Gris)</span>
                     </span>
                 </div>
             </div>
@@ -708,7 +721,7 @@ public class ServidorWebCentral {
                         icon = 'fa-ban text-amber-400';
                         mapColor = 'bg-amber-600 border-amber-300 text-white shadow-lg shadow-amber-500/40';
                         pipeStroke = '#f59e0b';
-                        estadoLabel = 'FUERA DE SERVICIO';
+                        estadoLabel = 'Out of Service (Fuera de Servicio)';
                     } else {
                         // GRIS (DESCONECTADA)
                         badgeClass = 'bg-slate-800 text-slate-400 border border-slate-700';

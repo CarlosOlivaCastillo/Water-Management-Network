@@ -33,6 +33,8 @@ public class WM_Central {
     // Caché en memoria de caudal y volumen por estación
     private static final ConcurrentHashMap<String, Double> caudalActual = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Double> volumenActual = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, String> ultimoResultadoFO = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, String> ultimoOperarioFuga = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         if (args.length < 3) {
@@ -82,28 +84,46 @@ public class WM_Central {
             if (scanner.hasNextLine()) {
                 System.out.print("\n[CENTRAL] Comandante > ");
                 String comando = scanner.nextLine().trim();
-                if (comando.equalsIgnoreCase("1") || comando.equalsIgnoreCase("estaciones")) {
+                String[] tokens = comando.split("\\s+");
+                String cmdBase = tokens[0].toUpperCase();
+
+                if (cmdBase.equals("1") || cmdBase.equals("ESTACIONES")) {
                     mostrarEstadoEstaciones();
-                } else if (comando.equalsIgnoreCase("2") || comando.equalsIgnoreCase("regar")) {
-                    System.out.print("ID de estación (ej. WS_01): ");
-                    String idWS = scanner.nextLine().trim();
-                    System.out.print("Duración en segundos (0 = indefinido): ");
-                    String durStr = scanner.nextLine().trim();
+                } else if (cmdBase.equals("2") || cmdBase.equals("REGAR")) {
+                    String idWS = (tokens.length >= 2) ? tokens[1].trim() : "";
+                    String durStr = (tokens.length >= 3) ? tokens[2].trim() : "";
+                    if (idWS.isEmpty()) {
+                        System.out.print("ID de estación (ej. WS_01 o ALL para todas): ");
+                        idWS = scanner.nextLine().trim();
+                    }
+                    if (durStr.isEmpty()) {
+                        System.out.print("Duración en segundos (0 = indefinido): ");
+                        durStr = scanner.nextLine().trim();
+                    }
                     procesarPeticionFO("START_RIEGO#" + idWS + "#CENTRAL#" + durStr);
-                } else if (comando.equalsIgnoreCase("3") || comando.equalsIgnoreCase("bloquear")) {
-                    System.out.print("ID de estación a bloquear (Fuera de Servicio): ");
-                    String idWS = scanner.nextLine().trim();
+                } else if (cmdBase.equals("3") || cmdBase.equals("BLOQUEAR")) {
+                    String idWS = (tokens.length >= 2) ? tokens[1].trim() : "";
+                    if (idWS.isEmpty()) {
+                        System.out.print("ID de estación a bloquear (ej. WS_01 o ALL para todas): ");
+                        idWS = scanner.nextLine().trim();
+                    }
                     bloquearEstacion(idWS);
-                } else if (comando.equalsIgnoreCase("4") || comando.equalsIgnoreCase("activar")) {
-                    System.out.print("ID de estación a activar (Disponible): ");
-                    String idWS = scanner.nextLine().trim();
+                } else if (cmdBase.equals("4") || cmdBase.equals("ACTIVAR")) {
+                    String idWS = (tokens.length >= 2) ? tokens[1].trim() : "";
+                    if (idWS.isEmpty()) {
+                        System.out.print("ID de estación a activar (ej. WS_01 o ALL para todas): ");
+                        idWS = scanner.nextLine().trim();
+                    }
                     activarEstacion(idWS);
-                } else if (comando.equalsIgnoreCase("5") || comando.equalsIgnoreCase("menu") || comando.equalsIgnoreCase("ayuda")) {
+                } else if (cmdBase.equals("PARAR") || cmdBase.equals("STOP")) {
+                    String idWS = (tokens.length >= 2) ? tokens[1].trim() : "ALL";
+                    procesarPeticionFO("STOP_RIEGO#" + idWS + "#CENTRAL");
+                } else if (cmdBase.equals("5") || cmdBase.equals("MENU") || cmdBase.equals("AYUDA")) {
                     mostrarMenu();
-                } else if (comando.equalsIgnoreCase("6") || comando.equalsIgnoreCase("limpiar")) {
+                } else if (cmdBase.equals("6") || cmdBase.equals("LIMPIAR")) {
                     System.out.print("\033[H\033[2J");
                     System.out.flush();
-                } else if (comando.equalsIgnoreCase("7") || comando.equalsIgnoreCase("salir") || comando.equalsIgnoreCase("exit")) {
+                } else if (cmdBase.equals("7") || cmdBase.equals("SALIR") || cmdBase.equals("EXIT")) {
                     System.out.println("[CENTRAL] Apagando Central de Gestión de Agua...");
                     ejecutando = false;
                     break;
@@ -307,13 +327,20 @@ public class WM_Central {
 
         if (accion.equals("START_RIEGO") && partes.length == 4) {
             String idFO = partes[2].trim();
+            String durStr = partes[3].trim();
+            if (idWS.equalsIgnoreCase("ALL")) {
+                for (String estId : GestorCentral.getInstance().obtenerIdsEstaciones()) {
+                    procesarPeticionFO("START_RIEGO#" + estId + "#" + idFO + "#" + durStr);
+                }
+                return;
+            }
             try {
-                int duracion = Integer.parseInt(partes[3].trim());
+                int duracion = Integer.parseInt(durStr);
 
                 String valido = GestorCentral.getInstance().procesarPeticion(mensaje);
                 if (valido.equals("<ACK>")) {
                     volumenActual.put(idWS, 0.0);
-                    enviarEngine("INICIAR_RIEGO#" + idWS, idWS);
+                    enviarEngine("INICIAR_RIEGO#" + idWS + "#" + duracion, idWS);
                     enviarFO(idWS, idFO, "ACK#" + idWS);
                     ServidorWebCentral.registrarEvento("Riego autorizado en " + idWS + " para operario " + idFO + " (" + duracion + "s)");
 
@@ -331,7 +358,16 @@ public class WM_Central {
                 espera(idFO);
             }
         } else if (accion.equals("STOP_RIEGO") && partes.length >= 2) {
-            String idFO = (partes.length >= 3) ? partes[2].trim() : GestorCentral.getInstance().obtenerOperario(idWS);
+            String idFOParam = (partes.length >= 3) ? partes[2].trim() : null;
+            if (idWS.equalsIgnoreCase("ALL")) {
+                for (String estId : GestorCentral.getInstance().obtenerIdsEstaciones()) {
+                    if (GestorCentral.getInstance().estaRegando(estId)) {
+                        procesarPeticionFO("STOP_RIEGO#" + estId + (idFOParam != null ? "#" + idFOParam : ""));
+                    }
+                }
+                return;
+            }
+            String idFO = (idFOParam != null) ? idFOParam : GestorCentral.getInstance().obtenerOperario(idWS);
             if (idFO == null) idFO = "DESCONOCIDO";
 
             cancelarTiempo(idWS);
@@ -341,13 +377,19 @@ public class WM_Central {
             caudalActual.put(idWS, 0.0);
             ServidorWebCentral.actualizarTelemetria(idWS, 0.0, litrosTotales, System.currentTimeMillis());
             ServidorWebCentral.registrarEvento("Riego finalizado en " + idWS + " (Total: " + litrosTotales + " L)");
-            enviarFO(idWS, idFO, "FIN_RIEGO#" + idWS + "#" + litrosTotales);
+            String msgFin = "FIN_RIEGO#" + idWS + "#" + litrosTotales;
+            ultimoResultadoFO.put(idFO, msgFin);
+            enviarFO(idWS, idFO, msgFin);
             espera(idFO);
         } else if (accion.equals("LISTAR") && partes.length >= 2) {
             String idFO = partes[1].trim();
             List<String> estaciones = GestorCentral.getInstance().obtenerEstaciones();
             String payload = String.join("|", estaciones);
             enviarFO("CENTRAL", idFO, "LISTA#" + payload);
+            String pendiente = ultimoResultadoFO.remove(idFO);
+            if (pendiente != null) {
+                enviarFO("CENTRAL", idFO, "RECUPERACION#" + pendiente);
+            }
         }
     }
 
@@ -361,7 +403,9 @@ public class WM_Central {
             caudalActual.put(idWS, 0.0);
             ServidorWebCentral.actualizarTelemetria(idWS, 0.0, litrosTotales, System.currentTimeMillis());
             ServidorWebCentral.registrarEvento("Fin temporizado de riego en " + idWS + " (Total: " + litrosTotales + " L)");
-            enviarFO(idWS, idFO, "FIN_RIEGO#" + idWS + "#" + litrosTotales);
+            String msgFin = "FIN_RIEGO#" + idWS + "#" + litrosTotales;
+            ultimoResultadoFO.put(idFO, msgFin);
+            enviarFO(idWS, idFO, msgFin);
             tareasTemporizadas.remove(idWS);
             espera(idFO);
         }, duracion, TimeUnit.SECONDS);
@@ -377,22 +421,41 @@ public class WM_Central {
     }
 
     public static void bloquearEstacion(String idWS) {
+        if (idWS != null && idWS.equalsIgnoreCase("ALL")) {
+            for (String estId : GestorCentral.getInstance().obtenerIdsEstaciones()) {
+                bloquearEstacion(estId);
+            }
+            return;
+        }
+        String operarioActivo = GestorCentral.getInstance().obtenerOperario(idWS);
         String res = GestorCentral.getInstance().procesarPeticion("BLOQUEAR#" + idWS);
         if (res.startsWith("<ACK>")) {
             cancelarTiempo(idWS);
             enviarEngine("PARAR_RIEGO#" + idWS, idWS);
             caudalActual.put(idWS, 0.0);
-            ServidorWebCentral.registrarEvento("Central: Estación " + idWS + " BLOQUEADA (Fuera de Servicio)");
-            System.out.println("[CENTRAL] Estación " + idWS + " puesta en FUERA DE SERVICIO.");
+            if (res.endsWith("#R") && operarioActivo != null) {
+                double litros = volumenActual.getOrDefault(idWS, 0.0);
+                String msgFin = "FIN_RIEGO#" + idWS + "#" + litros;
+                ultimoResultadoFO.put(operarioActivo, msgFin);
+                enviarFO(idWS, operarioActivo, msgFin);
+            }
+            ServidorWebCentral.registrarEvento("Central: Estación " + idWS + " BLOQUEADA (Out of Service)");
+            System.out.println("[CENTRAL] Estación " + idWS + " puesta en Out of Service (FUERA DE SERVICIO).");
         } else {
             System.out.println("[CENTRAL] No se pudo bloquear la estación " + idWS + ".");
         }
     }
 
     public static void activarEstacion(String idWS) {
+        if (idWS != null && idWS.equalsIgnoreCase("ALL")) {
+            for (String estId : GestorCentral.getInstance().obtenerIdsEstaciones()) {
+                activarEstacion(estId);
+            }
+            return;
+        }
         String res = GestorCentral.getInstance().procesarPeticion("ACTIVAR#" + idWS);
         if (res.startsWith("<ACK>")) {
-            ServidorWebCentral.registrarEvento("Central: Estación " + idWS + " ACTIVADA (Disponible)");
+            ServidorWebCentral.registrarEvento("Central: Estación " + idWS + " ACTIVADA (Available / Disponible)");
             System.out.println("[CENTRAL] Estación " + idWS + " activada (DISPONIBLE).");
         } else {
             System.out.println("[CENTRAL] No se pudo activar la estación " + idWS + ".");
@@ -431,10 +494,40 @@ public class WM_Central {
         cancelarTiempo(idWS);
         enviarEngine("PARAR_RIEGO#" + idWS, idWS);
         caudalActual.put(idWS, 0.0);
-        ServidorWebCentral.registrarEvento("🚨 ¡ALERTA! Fuga en " + idWS + ". Riego cortado automáticamente.");
+        double litrosRegados = volumenActual.getOrDefault(idWS, 0.0);
+        ServidorWebCentral.registrarEvento("🚨 ¡ALERTA! Fuga en " + idWS + ". Riego cortado (Volumen previo: " + litrosRegados + " L).");
         if (idFO != null) {
-            enviarFO(idWS, idFO, "FUGA#" + idWS);
+            ultimoOperarioFuga.put(idWS, idFO);
+            String msgFuga = "FUGA#" + idWS + "#" + litrosRegados;
+            ultimoResultadoFO.put(idFO, msgFuga);
+            enviarFO(idWS, idFO, msgFuga);
             espera(idFO);
+        }
+    }
+
+    public static void pararRiegoPorCaidaMonitor(String idWS, String operario) {
+        System.out.println("\n[ALERTA RESILIENCIA] Monitor de " + idWS + " caído durante riego. Finalizando riego en Engine...");
+        String idFO = (operario != null && !operario.isEmpty()) ? operario : "CENTRAL";
+        cancelarTiempo(idWS);
+        enviarEngine("PARAR_RIEGO#" + idWS, idWS);
+        caudalActual.put(idWS, 0.0);
+        double litrosRegados = volumenActual.getOrDefault(idWS, 0.0);
+        ServidorWebCentral.registrarEvento("⚠️ Monitor de " + idWS + " caído durante riego. Suministro detenido (" + litrosRegados + " L).");
+        String msgFin = "FIN_RIEGO#" + idWS + "#" + litrosRegados;
+        ultimoResultadoFO.put(idFO, msgFin);
+        enviarFO(idWS, idFO, msgFin);
+        espera(idFO);
+    }
+
+    public static void notificarRecuperacionEstacion(String idWS) {
+        double litrosPrevios = volumenActual.getOrDefault(idWS, 0.0);
+        String idFO = ultimoOperarioFuga.remove(idWS);
+        if (idFO != null || litrosPrevios > 0.0) {
+            String destinoFO = (idFO != null) ? idFO : "CENTRAL";
+            String msgEstadoFinal = "FIN_RIEGO#" + idWS + "#" + litrosPrevios;
+            ultimoResultadoFO.put(destinoFO, msgEstadoFinal);
+            enviarFO(idWS, destinoFO, msgEstadoFinal);
+            System.out.println("[CENTRAL] Estación " + idWS + " recuperada. Estado final del riego previo enviado a " + destinoFO + " (" + litrosPrevios + " L).");
         }
     }
 

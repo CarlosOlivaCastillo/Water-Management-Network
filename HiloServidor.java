@@ -32,13 +32,11 @@ class HiloServidor extends Thread {
                         if (partes.length > 1) {
                             idWS = partes[1].trim();
                         }
-                        if ("REGISTRO".equals(accion) || "FUGA".equals(accion) || "AVERIA".equals(accion) || "FIN_FUGA".equals(accion)) {
-                            esMonitor = true;
-                        }
                     }
                     String respuesta = gestorCentral.procesarPeticion(mensaje);
                     String[] partes = respuesta.split("#");
                     if ("FUGA".equals(accion) || "AVERIA".equals(accion)) {
+                        esMonitor = true;
                         if (partes.length > 1 && partes[1].trim().equals("R")) {
                             String operario = (partes.length > 2) ? partes[2].trim() : null;
                             WM_Central.cortarAguaFuga(idWS, operario);
@@ -46,10 +44,18 @@ class HiloServidor extends Thread {
                             ServidorWebCentral.registrarEvento("¡ALERTA! Fuga reportada en estación " + idWS);
                         }
                     } else if ("FIN_FUGA".equals(accion) && idWS != null) {
+                        esMonitor = true;
+                        WM_Central.notificarRecuperacionEstacion(idWS);
                         ServidorWebCentral.registrarEvento("✅ Contingencia resuelta en estación " + idWS + " (Vuelve a DISPONIBLE)");
                         System.out.println("\n[CENTRAL] Contingencia resuelta en " + idWS + ". Estación disponible nuevamente.");
                     } else if ("REGISTRO".equals(accion) && idWS != null) {
-                        ServidorWebCentral.registrarEvento("Estación registrada y conectada: " + idWS);
+                        if ("<ACK>".equals(partes[0].trim())) {
+                            esMonitor = true;
+                            ServidorWebCentral.registrarEvento("Estación autenticada y conectada: " + idWS);
+                        } else {
+                            esMonitor = false;
+                            ServidorWebCentral.registrarEvento("⛔ Registro DENEGADO: Estación no registrada (" + idWS + ")");
+                        }
                     }
                     escribirSocket(ProtocoloUtil.empaquetar(partes[0].trim()));
                 } catch (Exception e) {
@@ -63,8 +69,14 @@ class HiloServidor extends Thread {
             System.out.println("Error en el hilo del servidor: " + e.getMessage());
         } finally {
             if (esMonitor && idWS != null) {
+                boolean estabaRegando = gestorCentral.estaRegando(idWS);
+                String operario = gestorCentral.obtenerOperario(idWS);
                 gestorCentral.actualizarEstado(idWS, "DESCONECTADA");
-                ServidorWebCentral.registrarEvento("Estación desconectada: " + idWS);
+                if (estabaRegando) {
+                    WM_Central.pararRiegoPorCaidaMonitor(idWS, operario);
+                }
+                System.out.println("\n[CENTRAL] Monitor de " + idWS + " desconectado -> Estación marcada como DESCONECTADA.");
+                ServidorWebCentral.registrarEvento("Monitor caído/desconectado: " + idWS + " pasa a DESCONECTADA");
             }
             cerrarConexion();
         }

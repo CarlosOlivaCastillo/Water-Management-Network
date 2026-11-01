@@ -46,10 +46,7 @@ if ($modo -eq "2") {
 
     Start-Sleep -Seconds 5
     $cp = ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar"
-    Write-Host "[2/3] Compilando código Java..." -ForegroundColor Yellow
-    javac -encoding UTF-8 -cp $cp *.java
-
-    Write-Host "[3/3] Iniciando WM_Central en nueva ventana..." -ForegroundColor Green
+    Write-Host "[2/2] Iniciando WM_Central en nueva ventana (sin recompilar)..." -ForegroundColor Green
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", "Write-Host '=== WM_CENTRAL ($IpHost) ===' -ForegroundColor Cyan; java -cp '$cp' WM_Central 8080 $IpHost 9092 8081"
 } else {
     $env:IP_PUBLICA_HOST = $IpHost

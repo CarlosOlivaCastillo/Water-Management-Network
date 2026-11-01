@@ -194,6 +194,9 @@ public class WM_FO {
         consola.close();
     }
 
+    private static volatile boolean esperandoRespuesta = false;
+    private static volatile long timestampUltimaPeticion = 0L;
+
     public static void listarEstaciones() {
         String mensaje = "LISTAR#" + idFO;
         enviarKafka(mensaje, idFO);
@@ -207,10 +210,13 @@ public class WM_FO {
     private static void enviarKafka(String mensaje, String key) {
         ProducerRecord<String, String> ticket = new ProducerRecord<>(TOPIC_PETICIONES_FO, key, mensaje);
         try {
-            productor.send(ticket).get();
+            esperandoRespuesta = true;
+            timestampUltimaPeticion = System.currentTimeMillis();
+            productor.send(ticket).get(3, TimeUnit.SECONDS);
             System.out.println("[WM_FO -> Kafka] Petición enviada: " + mensaje);
         } catch (Exception e) {
-            System.out.println("[ERROR KAFKA] Fallo al entregar: " + e.getMessage());
+            esperandoRespuesta = false;
+            System.out.println("[ERROR] Imposible conectar con WM_Central / Broker Kafka: " + e.getMessage());
         }
     }
 
@@ -241,14 +247,21 @@ public class WM_FO {
                         if (record.key() == null || !record.key().equals(idFO)) {
                             continue;
                         }
+                        esperandoRespuesta = false;
                         String mensaje = record.value();
                         String pantalla = gestionarMensaje(mensaje);
                         System.out.println("\n[CENTRAL => " + idFO + "] " + pantalla);
                         System.out.print("[" + idFO + "] => ");
                     }
+
+                    if (esperandoRespuesta && (System.currentTimeMillis() - timestampUltimaPeticion > 4500)) {
+                        esperandoRespuesta = false;
+                        System.out.println("\n[ERROR] Imposible conectar con WM_Central: el servidor central está fuera de servicio o no responde.");
+                        System.out.print("[" + idFO + "] => ");
+                    }
                 }
             } catch (Exception e) {
-                System.out.println("ERROR en el hilo consumidor de FO: " + e.getMessage());
+                System.out.println("[ERROR] Imposible conectar con WM_Central / Kafka en el hilo consumidor: " + e.getMessage());
             }
         });
 
@@ -257,6 +270,11 @@ public class WM_FO {
     }
 
     public static String gestionarMensaje(String msg) {
+        if (msg.startsWith("RECUPERACION#")) {
+            String interno = msg.substring("RECUPERACION#".length());
+            return "[RECUPERACIÓN DE SESIÓN] Resultado de su servicio mientras estaba desconectado -> " + gestionarMensaje(interno);
+        }
+
         if (msg.startsWith("LISTA#")) {
             String payload = msg.substring("LISTA#".length());
             StringBuilder sb = new StringBuilder();
@@ -301,7 +319,7 @@ public class WM_FO {
         } else if (res.equals("NACK")) {
             return "Riego DENEGADO en estación " + idWS + " (No disponible, ocupada o en avería).";
         } else if (res.equals("FUGA")) {
-            return "¡ALERTA! FUGA detectada en estación " + idWS + ". Suministro cancelado inmediatamente.";
+            return "¡ALERTA! FUGA detectada en estación " + idWS + ". Suministro cancelado inmediatamente (Volumen suministrado: " + litros + " litros).";
         } else {
             return "FIN DE RIEGO en estación " + idWS + " | Resumen volumen total consumido: " + litros + " litros.";
         }

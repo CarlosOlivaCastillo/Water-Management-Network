@@ -28,15 +28,13 @@ $modo = Read-Host "¿Cómo deseas lanzar las estaciones? [1 = Docker Compose (Re
 
 if ($modo -eq "2") {
     $cp = ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar"
-    Write-Host "`n[1/3] Compilando clases Java..." -ForegroundColor Yellow
-    javac -encoding UTF-8 -cp $cp *.java
 
-    Write-Host "[2/3] Lanzando Estación WS_01 (Monitor :5001 + Engine)..." -ForegroundColor Green
+    Write-Host "`n[1/2] Lanzando Estación WS_01 (Monitor :5001 + Engine)..." -ForegroundColor Green
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", "Write-Host '=== MONITOR WS_01 ===' -ForegroundColor Yellow; java -cp '$cp' WM_WS_M 5001 $IpCentral 8080 WS_01"
     Start-Sleep -Seconds 1
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", "Write-Host '=== ENGINE WS_01 (Pulsa ENTER para simular FUGA KO / OK) ===' -ForegroundColor Green; java -cp '$cp' WM_WS_E $IpCentral 9092 localhost 5001 WS_01"
 
-    Write-Host "[3/3] Lanzando Estación WS_02 (Monitor :5002 + Engine)..." -ForegroundColor Green
+    Write-Host "[2/2] Lanzando Estación WS_02 (Monitor :5002 + Engine)..." -ForegroundColor Green
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", "Write-Host '=== MONITOR WS_02 ===' -ForegroundColor Yellow; java -cp '$cp' WM_WS_M 5002 $IpCentral 8080 WS_02"
     Start-Sleep -Seconds 1
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", "Write-Host '=== ENGINE WS_02 (Pulsa ENTER para simular FUGA KO / OK) ===' -ForegroundColor Green; java -cp '$cp' WM_WS_E $IpCentral 9092 localhost 5002 WS_02"

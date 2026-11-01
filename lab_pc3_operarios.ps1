@@ -28,10 +28,8 @@ $modo = Read-Host "¿Cómo deseas lanzar los operarios? [1 = Docker Compose (Rec
 
 if ($modo -eq "2") {
     $cp = ".;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar"
-    Write-Host "`n[1/2] Compilando clases Java..." -ForegroundColor Yellow
-    javac -encoding UTF-8 -cp $cp *.java
 
-    Write-Host "[2/2] Abriendo consolas interactivas para FO_01 y FO_02..." -ForegroundColor Magenta
+    Write-Host "`n[1/1] Abriendo consolas interactivas para FO_01 y FO_02..." -ForegroundColor Magenta
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", "Write-Host '=== OPERARIO FO_01 (Ej: WS_01#10 o FILE#tareas.txt) ===' -ForegroundColor Magenta; java -cp '$cp' WM_FO $IpKafka 9092 FO_01"
     Start-Sleep -Seconds 1
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit", "-Command", "Write-Host '=== OPERARIO FO_02 (Ej: WS_02#10 o STOP#WS_02) ===' -ForegroundColor Magenta; java -cp '$cp' WM_FO $IpKafka 9092 FO_02"

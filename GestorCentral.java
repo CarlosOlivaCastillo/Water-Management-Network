@@ -124,12 +124,15 @@ public final class GestorCentral {
 
         switch (peticion) {
             case "REGISTRO" -> {
-                // REGISTRO#IDWS#UBICACION
-                if (partes.length == 3) {
+                // REGISTRO#IDWS#UBICACION -> Autenticar que la WS esté registrada en la BD
+                if (partes.length >= 2) {
                     String idWS = partes[1].trim();
-                    String ubicacion = partes[2].trim();
-                    esvalido = añadirDatos(idWS, "DISPONIBLE", ubicacion);
+                    String ubicacion = (partes.length >= 3) ? partes[2].trim() : "";
+                    esvalido = autenticarYConectarEstacion(idWS, ubicacion);
                 }
+            }
+            case "PING" -> {
+                esvalido = true;
             }
             case "START_RIEGO" -> {
                 // START_RIEGO#IDWS#IDFO#DURACION
@@ -196,6 +199,45 @@ public final class GestorCentral {
         } else {
             return "<NACK>";
         }
+    }
+
+    public synchronized boolean autenticarYConectarEstacion(String idWS, String ubicacion) {
+        String sqlCheck = "SELECT ubicacion FROM estaciones WHERE idWS = ?";
+        try (PreparedStatement psCheck = conexionBBDD.prepareStatement(sqlCheck)) {
+            psCheck.setString(1, idWS);
+            try (ResultSet rs = psCheck.executeQuery()) {
+                if (!rs.next()) {
+                    System.out.println("\n[CENTRAL - SEGURIDAD] Registro DENEGADO (<NACK>): La estación '" + idWS + "' NO está registrada en la base de datos.");
+                    return false;
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Error al autenticar estación: " + e.getMessage());
+            return false;
+        }
+
+        String sqlUpdate = "UPDATE estaciones SET estado = 'DISPONIBLE', idFO = NULL, duracion = 0, fecha_inicio = NULL WHERE idWS = ?";
+        try (PreparedStatement psUpd = conexionBBDD.prepareStatement(sqlUpdate)) {
+            psUpd.setString(1, idWS);
+            return psUpd.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Error al conectar estación: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized List<String> obtenerIdsEstaciones() {
+        List<String> ids = new ArrayList<>();
+        String com = "SELECT idWS FROM estaciones";
+        try (PreparedStatement pstmt = conexionBBDD.prepareStatement(com);
+             ResultSet rs = pstmt.executeQuery()) {
+            while (rs.next()) {
+                ids.add(rs.getString("idWS"));
+            }
+        } catch (SQLException e) {
+            System.out.println("ERROR al obtener IDs de estaciones: " + e.getMessage());
+        }
+        return ids;
     }
 
     public synchronized boolean añadirDatos(String idWS, String estado, String ubicacion) {
