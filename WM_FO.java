@@ -51,8 +51,8 @@ public class WM_FO {
 
         iniciarConsumidor();
 
-        // Pequeña pausa inicial para asegurar que el consumidor de Kafka esté suscrito
-        try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+        // Esperar a que el consumidor de Kafka esté asignado y posicionado antes de enviar LISTAR
+        try { consumidorListo.await(6, TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
 
         if (args.length == 4) {
             ejecutarFichero(args[3]);
@@ -234,6 +234,8 @@ public class WM_FO {
         }
     }
 
+    private static final CountDownLatch consumidorListo = new CountDownLatch(1);
+
     public static void iniciarConsumidor() {
         Thread hiloConsumidor = new Thread(() -> {
             Properties props = new Properties();
@@ -244,10 +246,24 @@ public class WM_FO {
             props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
 
             try (KafkaConsumer<String, String> consumidor = new KafkaConsumer<>(props)) {
-                consumidor.subscribe(Collections.singletonList(TOPIC_RESPUESTAS_FO));
+                List<org.apache.kafka.common.PartitionInfo> infos = consumidor.partitionsFor(TOPIC_RESPUESTAS_FO, Duration.ofSeconds(5));
+                List<org.apache.kafka.common.TopicPartition> particiones = new ArrayList<>();
+                if (infos != null && !infos.isEmpty()) {
+                    for (org.apache.kafka.common.PartitionInfo info : infos) {
+                        particiones.add(new org.apache.kafka.common.TopicPartition(TOPIC_RESPUESTAS_FO, info.partition()));
+                    }
+                } else {
+                    particiones.add(new org.apache.kafka.common.TopicPartition(TOPIC_RESPUESTAS_FO, 0));
+                }
+                consumidor.assign(particiones);
+                consumidor.seekToEnd(particiones);
+                for (org.apache.kafka.common.TopicPartition tp : particiones) {
+                    consumidor.position(tp);
+                }
+                consumidorListo.countDown();
 
                 while (true) {
-                    ConsumerRecords<String, String> records = consumidor.poll(Duration.ofMillis(500));
+                    ConsumerRecords<String, String> records = consumidor.poll(Duration.ofMillis(300));
                     for (ConsumerRecord<String, String> record : records) {
                         if (record.key() == null || !record.key().equals(idFO)) {
                             continue;
@@ -259,13 +275,14 @@ public class WM_FO {
                         System.out.print("[" + idFO + "] => ");
                     }
 
-                    if (esperandoRespuesta && (System.currentTimeMillis() - timestampUltimaPeticion > 4500)) {
+                    if (esperandoRespuesta && (System.currentTimeMillis() - timestampUltimaPeticion > 8000)) {
                         esperandoRespuesta = false;
                         System.out.println("\n[ERROR] Imposible conectar con WM_Central: el servidor central está fuera de servicio o no responde.");
                         System.out.print("[" + idFO + "] => ");
                     }
                 }
             } catch (Exception e) {
+                consumidorListo.countDown();
                 System.out.println("[ERROR] Imposible conectar con WM_Central / Kafka en el hilo consumidor: " + e.getMessage());
             }
         });

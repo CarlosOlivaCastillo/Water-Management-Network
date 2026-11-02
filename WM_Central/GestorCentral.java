@@ -40,6 +40,8 @@ public final class GestorCentral {
             pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('FO_01', 'Operario Norte')");
             pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('FO_02', 'Operario Sur')");
             pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('FO_03', 'Operario Este')");
+            pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('FO_04', 'Operario Oeste')");
+            pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('FO_05', 'Operario Central')");
             pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('WEB_PANEL', 'Panel Web Central')");
             pstmt.execute("INSERT OR IGNORE INTO operarios (idFO, nombre) VALUES ('CENTRAL', 'Consola Central')");
         } catch (SQLException e) {
