@@ -4,7 +4,7 @@
 $host.UI.RawUI.WindowTitle = "PANEL CONTROL OPERARIOS (PC LAB)"
 $projectDir = $PSScriptRoot
 if (-not $projectDir) { $projectDir = (Get-Location).Path }
-$cp = "lib/WaterManagement.jar;.;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar"
+$cp = ".;lib/WaterManagement.jar;lib/*;kafka-clients.jar;slf4j-api.jar;slf4j-simple.jar"
 
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Magenta
@@ -38,7 +38,9 @@ while ($true) {
     Write-Host "  1 : Reabrir FO_01 (ej. tras cerrarlo a mitad de riego para ver recuperacion)" -ForegroundColor White
     Write-Host "  2 : Reabrir FO_02" -ForegroundColor White
     Write-Host "  3 : Lanzar tercer operario FO_03" -ForegroundColor White
-    Write-Host "  4 : Lanzar FO_01 ejecutando automaticamente tareas.txt (sin tocar teclado)" -ForegroundColor Yellow
+    Write-Host "  4 : Lanzar cuarto operario FO_04" -ForegroundColor White
+    Write-Host "  5 : Lanzar FO_03 y FO_04 a la vez (para tener los 4 operarios)" -ForegroundColor Cyan
+    Write-Host "  6 : Lanzar FO_01 ejecutando automaticamente tareas.txt (sin tocar teclado)" -ForegroundColor Yellow
     Write-Host "  0 : Salir de este menu" -ForegroundColor Gray
     Write-Host "=================================================================" -ForegroundColor Magenta
 
@@ -50,6 +52,12 @@ while ($true) {
     } elseif ($op -eq "3") {
         Lanzar-Operario "FO_03"
     } elseif ($op -eq "4") {
+        Lanzar-Operario "FO_04"
+    } elseif ($op -eq "5") {
+        Lanzar-Operario "FO_03"
+        Start-Sleep -Seconds 1
+        Lanzar-Operario "FO_04"
+    } elseif ($op -eq "6") {
         Lanzar-Operario "FO_01" "tareas.txt"
     } elseif ($op -eq "0") {
         break
